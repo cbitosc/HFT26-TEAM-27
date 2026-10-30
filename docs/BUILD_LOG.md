@@ -164,3 +164,31 @@ Branch `claude/mod2-extraction-0b6631`. Implements both stubs in `src/backend/ap
 - `pytest`: **28 passed**
 - Uploading the 3 sensor CSVs and 2 witness files via the API and running analysis: the 3 sensor stages report `real` (28 observations total), witness stages report `fixture` without a key
 - Not run: a live Featherless call (no key in this environment); frontend untouched, so `npm run build` not re-run
+
+## 2026-10-30 · Module 3: timeline built
+
+Branch `claude/mod3-timeline-7dcf2c`. `build_timeline` is now real (Pandas/NumPy rules, no LLM), so the pipeline reports stage 3 as `real`.
+
+- `src/backend/app/modules/timeline/__init__.py`
+  - **Time:** `t_rel_s`, else `timestamp` minus the reference time (uses `config.INCIDENT_REFERENCE_TIME` if present, else 2026-10-12 17:42:00 IST). Timestamps with uncertainty > 30 s (witness clock claims) are treated as "what happened", not "when". They join the nearest matching event without moving it or adding to its confidence.
+  - **Order-only witness lines** are walked in `attributes.order` and matched monotonically to anchored events of the same kind. Lines with no match (W1 "SUV didn't brake", W2 "sped up") span the gap between their placed neighbours, with uncertainty = half the gap.
+  - **Correlation:**
+    - Same action family + compatible vehicle within 1 s + both uncertainties.
+    - Signals group by phase: same approach and state until the approach changes, ending at the next change.
+    - Collision and post-collision are incident-wide. A sudden heading change at collision time counts as impact evidence.
+    - "Moving" ends at the vehicle's next event.
+  - **Resolution pre-pass** for real module-1 output: video vehicles with no id are matched to known vehicles by direction and colour/type words, collision `vehicles` labels are remapped, and free-text signal approaches ("ego lane", "from the west") are normalised. It works on copies; inputs are never mutated.
+  - **Confidence:** noisy-OR of members. Uncertainty is the best member's, widened by the spread.
+- `tests/test_timeline.py` (new, 9 tests)
+  - Sorted, valid, every observation referenced exactly once.
+  - The collision at t=10 groups video, sensor and witness ids, including both wall-clock claims.
+  - Signal phases: NB yellow 7→10, NB red 10, EB red −20→11, EB green 11.
+  - V1 braking ~9.0, V2 braking 9.5–10, V2 enters against red at 9.1.
+  - `t_rel_s` is derived from `timestamp`.
+  - Real-video input shapes are resolved.
+- `tests/test_api.py`: the demo-run test required *every* stage to be `fixture`, which breaks as soon as any module lands. It now requires the three extractor stages to be `fixture` (no uploads) and no stage to be `error`.
+- Differences from `fixtures/timeline.json`:
+  - V1 entering at t=10 and the heading changes are kept apart from or folded into the collision differently.
+  - NB green (vid_001 + W1) is its own signal event.
+  - The witness-only claims get their own events.
+- Verification: `pytest` 21 passed. Frontend untouched.

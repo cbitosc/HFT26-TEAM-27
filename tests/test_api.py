@@ -21,7 +21,9 @@ def test_results_served_before_any_run():
 def test_demo_run_without_evidence_uses_fixtures():
     run = client.post("/api/analysis/run").json()
     assert run["evidence_count"] == 0
-    assert {s["status"] for s in run["stages"]} == {"fixture"}
+    # no uploads: extractors serve their demo fixtures; modules 3-5 run for real once built
+    assert {s["status"] for s in run["stages"][:3]} == {"fixture"}
+    assert all(s["status"] in ("real", "fixture") for s in run["stages"])
     assert len(run["stages"]) == 6
     assert client.get("/api/analysis/latest").json()["run_id"] == run["run_id"]
 
