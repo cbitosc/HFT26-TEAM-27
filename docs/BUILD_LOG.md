@@ -232,3 +232,16 @@ Branch `claude/mod3-timeline-7dcf2c`. `build_timeline` is now real (Pandas/NumPy
 - New `tests/test_reconstruction.py` (13 tests): window, monotonic 0.5 s tracks, V1/V2 within 1 m of (-1.75, 1.75) at t=10, match to ground truth through the sensor gap, collision marker present, no marker without a supported collision event, approach defaults without sensors, dense 0.5 s telematics with the gap, pipeline stage `real`
 - `tests/test_api.py`: the "all stages fixture" assertion now checks only the extractor stages (same change as mod3's branch, so the merge on that line is trivial)
 - `pytest`: 26 passed. `npm run build`: OK
+
+## 2026-10-30 · Modules 1–5 merged into `feature/prototype`
+
+- Merged `claude/mod1-video-ingestion-1c16c1`, `claude/mod2-extraction-0b6631`, `claude/mod3-timeline-7dcf2c`, `claude/mod4-contradictions-4e1221` and `claude/mod5-reconstruction-a604bb`, in that order
+- Conflicts: `docs/BUILD_LOG.md` (every branch appended an entry; all entries kept, in merge order) and `tests/test_api.py` (modules 3 and 4 relaxed the same demo-run assertion; kept module 3's version)
+- `tests/test_api.py`: the demo run now requires stages 3–5 to be `real`. New `test_real_sensor_evidence_flows_through_modules_2_to_5` uploads the three `data/sensor` CSVs and checks that real sensor extraction feeds real timeline, contradictions and reconstruction: no stage errors, both vehicles enter the junction at t≈10, the V1 6.0–7.5 s gap is reported, and both tracks are within 1 m of (-1.75, 1.75) at t=10
+- Verification: `pytest` **75 passed**, frontend build OK. Dashboard demo run in the browser: stages 1–2 `fixture` (no Featherless key), 3–5 `real`, 16 timeline events, 12 conflicts, collision marker at t=10 s (-1.75, 1.75), no console errors
+
+### Integration issues found (not fixed yet)
+
+1. **The W1 "green light" conflict is lost end to end.** Module 3 groups `wit_w1_02` (W1: V1's light was green on approach) into the t=0 "Northbound signal green" event, where it agrees with the signal. Module 4 finds conflicts through timeline grouping, so it never compares the claim with the 7.0–10.0 s yellow phase. On `fixtures/timeline.json` module 4 finds it; on module 3's timeline it doesn't (8 → 12 conflicts, but this high-severity one is missing)
+2. **Noisy single-source conflicts.** Module 4 flags every event backed by one source type as `missing_evidence` (e.g. "'V1 sensor data gap' has a single source", "'Eastbound signal red' has a single source"). With sensor-only uploads that's 15 of 17 conflicts
+3. With sensor-only evidence no collision is inferred: there is no `collision` observation, although both vehicles show simultaneous sudden heading changes at the same point at t=10.5. Arguably correct ("only if supported by evidence"), but it could be inferred
