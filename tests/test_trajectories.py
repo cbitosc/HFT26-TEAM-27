@@ -70,9 +70,11 @@ def test_tracks_without_key_become_a_camera_reconstruction(tmp_path, monkeypatch
     timeline = build_timeline([obs])
     assert timeline.events == []  # raw tracks are not timeline events
     empty = ConflictReport(incident_id="x", generated_at=datetime.now(timezone.utc), conflicts=[])
-    # No view is calibrated: there is no top-down reconstruction, and it says why.
+    # No view is calibrated: no metric map, but a labelled schematic estimate (no speeds, no impact point).
     top_down = build_reconstruction([obs], timeline, empty)
-    assert top_down.vehicles == [] and "calibrat" in top_down.note
+    assert top_down.scene.units == "schematic" and top_down.vehicles and top_down.collision is None
+    assert "NOT to scale" in top_down.note and "calibrat" in top_down.note
+    assert all(p.source == "estimated" and p.speed_kmh is None for v in top_down.vehicles for p in v.track)
     # The footage with its tracks is event analysis (pixels).
     recon = build_event_analysis([obs], timeline)
     assert recon.scene.type == "camera_image" and recon.scene.units == "px"
@@ -81,3 +83,36 @@ def test_tracks_without_key_become_a_camera_reconstruction(tmp_path, monkeypatch
     assert {v.vehicle_id[:2] for v in recon.vehicles} >= {"T1", "T4"}
     first = recon.vehicles[0].track
     assert first == sorted(first, key=lambda p: p.t_s)
+
+
+def _px_track(camera: str, view_box=(0, 0, 480, 300)):
+    from app.schemas import Observation, SourceRef, SourceType
+    pts = [[2.0 + 0.2 * k, 240.0, 100.0 + 20 * k] for k in range(8)]  # walking down the image, toward the camera
+    return Observation(id="vid_t1", source_type=SourceType.video, source_ref=SourceRef(evidence_id="ev_v", file="v.mp4", locator="frames:1-9"),
+                       t_rel_s=2.0, time_uncertainty_s=0.1, action="track", confidence=0.6,
+                       attributes={"track_id": "T1-001", "view": 1, "camera": camera, "units": "px", "view_box": list(view_box),
+                                   "points": pts, "direction": "towards camera"})
+
+
+from app.schemas import ObservationSet as _OS  # noqa: E402
+
+
+def test_schematic_plan_is_labelled_and_makes_no_metric_claims():
+    from app.modules.reconstruction.camera import reconstruct_schematic_from_camera
+    sets = [_OS(source_type="video", evidence_id="ev_v", producer="t", generated_at=datetime.now(timezone.utc),
+                           observations=[_px_track("fixed")])]
+    tl = build_timeline(sets)
+    rec = reconstruct_schematic_from_camera(sets, tl)
+    assert rec.scene.units == "schematic" and rec.collision is None and "NOT to scale" in rec.note
+    track = rec.vehicles[0].track
+    assert all(p.source == "estimated" and p.speed_kmh is None and p.confidence <= 0.3 for p in track)
+    depths = [p.y_m for p in track]
+    assert depths == sorted(depths, reverse=True)  # lower in the image = closer to the camera = smaller depth
+    assert rec.t_min_s == 2.0
+
+
+def test_no_schematic_plan_for_a_moving_camera():
+    from app.modules.reconstruction.camera import reconstruct_schematic_from_camera
+    sets = [_OS(source_type="video", evidence_id="ev_v", producer="t", generated_at=datetime.now(timezone.utc),
+                           observations=[_px_track("moving")])]
+    assert reconstruct_schematic_from_camera(sets, build_timeline(sets)) is None

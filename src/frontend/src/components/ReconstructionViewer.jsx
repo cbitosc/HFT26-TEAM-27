@@ -159,12 +159,16 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
   const junction = data.scene.type !== 'metric'
   const [cx, cy] = data.scene.center_m ?? [0, 0]
   const R = 1.5 * sceneE // roads run past the scene edge so the auto view never shows them ending
-  const current = data.vehicles.map((v) => ({ v, p: positionAt(v.track, time) }))
+  const schematic = data.scene.units === 'schematic'
+  // Camera tracks exist only while the vehicle is seen; sensor tracks span the whole window.
+  const visible = data.vehicles.filter((v) => !schematic || (time >= v.track[0].t_s - 0.3 && time <= v.track[v.track.length - 1].t_s + 0.3))
+  const current = visible.map((v) => ({ v, p: positionAt(v.track, time) }))
   const E = !junction
     ? sceneE
     : zoom === 'auto'
       ? Math.min(1.5 * sceneE, Math.max(ZOOMS.junction, ...current.map(({ p }) => Math.max(Math.abs(p.x_m), Math.abs(p.y_m)) + 8)))
       : ZOOMS[zoom] ?? sceneE
+  const carScale = schematic ? Math.max(0.3, Math.min(1, E / 40)) : 1 // schematic units are not metres: keep icons small
   const s = E / 60 // scale strokes and text with the view
   const fs = 2.2 * s
   const half = L // two lanes per road -> half-width = one lane width each side
@@ -174,9 +178,8 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
 
   const step = (dir) => {
     setPlaying(false)
-    const grid = data.vehicles[0].track.map((q) => q.t_s)
-    const nxt = dir > 0 ? grid.find((g) => g > time + 1e-6) : [...grid].reverse().find((g) => g < time - 1e-6)
-    onTimeChange(nxt ?? (dir > 0 ? data.t_max_s : data.t_min_s))
+    const nxt = time + dir * 0.5
+    onTimeChange(Math.min(data.t_max_s, Math.max(data.t_min_s, Math.round(nxt * 2) / 2)))
   }
   const onKey = (e) => {
     if (e.key === 'ArrowRight') { e.preventDefault(); step(1) }
@@ -205,7 +208,7 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
       actions={
         <div className="flex items-center gap-2 text-xs">
           <span className="text-slate-500" title={data.note ?? ''}>
-            {junction ? 'declared junction · metres' : data.scene.frame_note ?? 'top-down map · metres'}
+            {schematic ? 'schematic plan · not to scale' : junction ? 'declared junction · metres' : data.scene.frame_note ?? 'top-down map · metres'}
           </span>
           <div className={`flex overflow-hidden rounded border border-slate-200 ${junction ? '' : 'hidden'}`}>
             {Object.keys(ZOOMS).map((z) => (
@@ -215,6 +218,11 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
           </div>
         </div>
       }>
+      {schematic && (
+        <div className="mb-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+          <b>Schematic estimate, not a measurement.</b> {data.note}
+        </div>
+      )}
       <svg viewBox={`${cx - E} ${-cy - E} ${2 * E} ${2 * E}`} className="mx-auto block aspect-square w-full max-w-xl rounded bg-lime-50">
         {/* World coordinates: +y is north, so flip the y axis. */}
         <g transform="scale(1,-1)">
@@ -254,8 +262,8 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
             const pts = [...past, p]
             return (
               <g key={v.vehicle_id}>
-                <polyline points={v.track.map((q) => `${q.x_m},${q.y_m}`).join(' ')}
-                  fill="none" stroke={v.color} strokeWidth={0.25 * Math.max(s, 0.4)} strokeOpacity={0.15} />
+                {!schematic && <polyline points={v.track.map((q) => `${q.x_m},${q.y_m}`).join(' ')}
+                  fill="none" stroke={v.color} strokeWidth={0.25 * Math.max(s, 0.4)} strokeOpacity={0.15} />}
                 {pts.slice(1).map((b, i) => {
                   const a = pts[i]
                   // the last segment ends at the vehicle, inside the grid step that ends at nextGridTime
@@ -270,7 +278,7 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
                 {derived.known && past.filter((q) => isMeasured(v.vehicle_id, q.t_s)).map((q) => (
                   <circle key={q.t_s} cx={q.x_m} cy={q.y_m} r={0.5 * Math.max(s, 0.4)} fill={v.color} stroke="white" strokeWidth={0.1} />
                 ))}
-                <g transform={`translate(${p.x_m},${p.y_m}) rotate(${-p.heading_deg})`}>
+                <g transform={`translate(${p.x_m},${p.y_m}) rotate(${-p.heading_deg}) scale(${carScale})`}>
                   <rect x={-0.9} y={-2.25} width={1.8} height={4.5} rx={0.4} fill={v.color} stroke="#0f172a" strokeWidth={0.15} />
                   <rect x={-0.7} y={0.8} width={1.4} height={0.9} fill="#e2e8f0" />
                 </g>
@@ -294,13 +302,13 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
         ))}
       </svg>
 
-      <div className="mt-3 flex items-center gap-2" tabIndex={0} onKeyDown={onKey} aria-label="Replay controls">
+      <div className="mt-3 flex flex-wrap items-center gap-2" tabIndex={0} onKeyDown={onKey} aria-label="Replay controls">
         <button onClick={() => step(-1)} aria-label="Step back" className="rounded border border-slate-200 px-2 py-1 text-xs">◀</button>
         <button onClick={togglePlay} className="w-16 rounded bg-slate-900 px-2 py-1 text-xs font-medium text-white">
           {playing ? 'Pause' : 'Play'}
         </button>
         <button onClick={() => step(1)} aria-label="Step forward" className="rounded border border-slate-200 px-2 py-1 text-xs">▶</button>
-        <div className="relative flex-1">
+        <div className="relative min-w-40 flex-1 basis-full sm:basis-0">
           <input type="range" min={data.t_min_s} max={data.t_max_s} step={0.1} value={time} aria-label="Time"
             onChange={(e) => { setPlaying(false); onTimeChange(Number(e.target.value)) }} className="w-full" />
           {data.collision && data.t_max_s > data.t_min_s && (
@@ -315,15 +323,16 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
         <span className="w-16 text-right font-mono text-xs">t={time.toFixed(1)}s</span>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-600">
-        {data.vehicles.map((v) => (
+        {schematic && <span>{data.vehicles.length} tracks · {visible.length} visible at this time</span>}
+        {(schematic ? visible.slice(0, 6) : data.vehicles).map((v) => (
           <span key={v.vehicle_id} className="flex items-center gap-1">
             <span className="inline-block h-2 w-3 rounded-sm" style={{ background: v.color }} />{v.label}
           </span>
         ))}
         {derived.known && (
           <span className="flex items-center gap-2 text-slate-500">
-            <svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="#475569" strokeWidth="2" /></svg>measured
-            <svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="#475569" strokeWidth="2" strokeDasharray="4 3" /></svg>interpolated / estimated
+            {schematic ? <><svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="#475569" strokeWidth="2" strokeDasharray="4 3" /></svg>estimated (schematic)</> : <><svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="#475569" strokeWidth="2" /></svg>measured
+            <svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="#475569" strokeWidth="2" strokeDasharray="4 3" /></svg>interpolated / estimated</>}
           </span>
         )}
         <a href={api.positionsUrl} className="ml-auto rounded border border-slate-200 px-2 py-0.5 text-slate-600 hover:bg-slate-50">

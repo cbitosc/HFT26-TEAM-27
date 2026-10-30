@@ -149,3 +149,68 @@ def reconstruct_ground_from_camera(observation_sets: list[ObservationSet], timel
                     frame_note=f"camera view {view} road frame: x = across the road (m), "
                                "y = distance from the camera along the road (m)"),
         t_min_s=round(min(times), 3), t_max_s=round(max(times), 3), vehicles=vehicles, collision=None, note=note)
+
+
+# Nominal pinhole assumptions for the schematic plan view (no calibration exists, so these are stated, not measured).
+SCHEMATIC_HORIZON_ABOVE_VIEW = 0.15   # horizon row sits this fraction of the view height above the view's top edge
+SCHEMATIC_FOCAL_PER_WIDTH = 0.87      # focal length = 0.87 x view width (about a 60 degree field of view)
+SCHEMATIC_NEAR_UNITS = 10.0           # schematic units per view-height of depth: bottom edge of the view = ~8.7 units
+MIN_SCHEMATIC_POINTS = 4
+
+
+def reconstruct_schematic_from_camera(observation_sets: list[ObservationSet], timeline: Timeline) -> Reconstruction | None:
+    """A schematic top-down plan from the tracks of a fixed, *uncalibrated* camera view.
+
+    Without lane markings or a manual calibration nothing is measured, so this is a labelled estimate: image
+    positions are mapped onto a flat ground plane with a nominal camera (horizon just above the view, ~60 degree
+    field of view). It shows who moved where and in what order, with the perspective undone roughly; distances,
+    speeds and a collision location are NOT given. Units are "schematic", every point is `estimated`.
+    """
+    tracks = [o for o in (o for s in observation_sets for o in s.observations)
+              if o.action == "track" and o.attributes.get("units") == "px" and o.attributes.get("camera") == "fixed"
+              and o.attributes.get("view_box") and len(o.attributes.get("points", [])) >= MIN_SCHEMATIC_POINTS]
+    if not tracks:
+        return None
+    per_view: dict[int, list[Observation]] = {}
+    for o in tracks:
+        per_view.setdefault(o.attributes.get("view", 1), []).append(o)
+    view, chosen = max(per_view.items(), key=lambda kv: len(kv[1]))
+    x1, y1, x2, y2 = chosen[0].attributes["view_box"]
+    w, h = max(x2 - x1, 1), max(y2 - y1, 1)
+    xc, y_h = (x1 + x2) / 2, y1 - SCHEMATIC_HORIZON_ABOVE_VIEW * h
+    focal = SCHEMATIC_FOCAL_PER_WIDTH * w
+
+    def ground(x: float, y: float) -> tuple[float, float]:
+        depth = SCHEMATIC_NEAR_UNITS * h / max(y - y_h, 0.05 * h)
+        return (x - xc) * depth / focal, depth
+
+    vehicles = []
+    for o in sorted(chosen, key=lambda o: o.attributes["points"][0][0]):
+        pts = [(t, *ground(x, y)) for t, x, y in o.attributes["points"]]
+        track = []
+        for k, (t, gx, gy) in enumerate(pts):
+            a, b = pts[max(0, k - 1)], pts[min(len(pts) - 1, k + 1)]
+            track.append(TrackPoint(t_s=t, x_m=round(gx, 2), y_m=round(gy, 2),
+                                    heading_deg=round(math.degrees(math.atan2(b[1] - a[1], b[2] - a[2])) % 360, 1),
+                                    source="estimated", confidence=0.25))
+        vehicles.append(VehicleTrack(
+            vehicle_id=o.attributes["track_id"], label=o.attributes["track_id"],
+            color=VIEW_COLORS[(view - 1) % len(VIEW_COLORS)],
+            description=f"moving {o.attributes.get('direction', '')}; schematic position from camera view {view}",
+            track=track, source_observation_ids=[o.id]))
+    xs = [p.x_m for v in vehicles for p in v.track]
+    ys = [p.y_m for v in vehicles for p in v.track]
+    times = [p.t_s for v in vehicles for p in v.track]
+    half = max(5.0, (max(xs) - min(xs)) / 2, (max(ys) - min(ys)) / 2) * 1.15
+    others = sorted(v for v in per_view if v != view)
+    note = (f"Schematic plan from camera view {view} ({len(vehicles)} vehicle tracks): NOT calibrated, NOT to scale. "
+            "Image positions are mapped onto a flat road with an assumed camera (horizon just above the view, about 60 degree "
+            "field of view), so it shows the layout and order of movement, not distances, speeds or an impact point. "
+            "Declare the lane-marking standard or add a manual calibration for a measured reconstruction."
+            + (f" Views {', '.join(map(str, others))} also have tracks but a different frame." if others else ""))
+    return Reconstruction(
+        incident_id=timeline.incident_id, generated_at=datetime.now(timezone.utc),
+        scene=Scene(type="metric", units="schematic", extent_m=round(half, 1),
+                    center_m=(round((max(xs) + min(xs)) / 2, 2), round((max(ys) + min(ys)) / 2, 2)),
+                    frame_note=f"schematic plan, camera view {view}: x = across the road, y = away from the camera (not to scale)"),
+        t_min_s=round(min(times), 3), t_max_s=round(max(times), 3), vehicles=vehicles, collision=None, note=note)

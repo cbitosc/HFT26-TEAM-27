@@ -25,7 +25,7 @@ OUT = ROOT / "eval" / "cases"
 RECONSTRUCTION = {"junction_side_impact": {"scene": "four_way_intersection", "min_vehicles": 2},
                   "gps_rear_end": {"scene": "metric", "min_vehicles": 2},
                   "cctv_motorway_speeds": {"scene": "metric", "min_vehicles": 3},
-                  "cctv_no_standard": {"empty": True},
+                  "cctv_no_standard": {"schematic": True},
                   "dashcam_brake": {"empty": True}}
 
 

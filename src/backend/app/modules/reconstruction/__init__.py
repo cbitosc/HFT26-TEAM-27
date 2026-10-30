@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from app.schemas import ConflictReport, ObservationSet, Reconstruction, Scene, Timeline
 
 from .builder import reconstruct
-from .camera import reconstruct_from_camera, reconstruct_ground_from_camera
+from .camera import reconstruct_from_camera, reconstruct_ground_from_camera, reconstruct_schematic_from_camera
 
 
 def build_reconstruction(
@@ -24,6 +24,9 @@ def build_reconstruction(
     ground = reconstruct_ground_from_camera(observation_sets, timeline)
     if ground is not None:
         return ground
+    schematic = reconstruct_schematic_from_camera(observation_sets, timeline)
+    if schematic is not None:
+        return schematic  # an uncalibrated fixed camera: a labelled estimate beats an empty panel
     image_tracks = any(o.action == "track" and o.attributes.get("units") == "px"
                        for st in observation_sets for o in st.observations)
     has_video = any(st.source_type.value == "video" for st in observation_sets)
@@ -50,17 +53,20 @@ def positions_export(rec: Reconstruction) -> dict:
     a position was measured, interpolated, extrapolated, tracked or estimated, so nothing reads as more certain
     than it is.
     """
-    px = rec.scene.units == "px"
+    px, sch = rec.scene.units == "px", rec.scene.units == "schematic"
     return {
         "incident_id": rec.incident_id,
         "generated_at": rec.generated_at.isoformat(),
         "coordinate_system": {
             "units": rec.scene.units,
-            "x": "pixels from the left of the camera frame" if px else "metres east of the origin",
-            "y": "pixels down from the top of the camera frame" if px else "metres north of the origin",
+            "x": "pixels from the left of the camera frame" if px else
+                 "schematic units across the road (not to scale)" if sch else "metres east of the origin",
+            "y": "pixels down from the top of the camera frame" if px else
+                 "schematic units away from the camera (not to scale)" if sch else "metres north of the origin",
             "heading_deg": "0 = north, clockwise" if not px else "image-space",
             "time": "seconds from the incident reference time (t_rel_s)",
             "scene": rec.scene.type,
+            **({"warning": "estimate under stated assumptions: layout and order of movement only"} if sch else {}),
         },
         "t_min_s": rec.t_min_s,
         "t_max_s": rec.t_max_s,

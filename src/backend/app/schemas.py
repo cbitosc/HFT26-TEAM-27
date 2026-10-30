@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-SCHEMA_VERSION = "1.3.0"
+SCHEMA_VERSION = "1.3.1"
 
 
 # ---------------------------------------------------------------- evidence
@@ -197,7 +197,7 @@ class Scene(BaseModel):
     """four_way_intersection: metres, +x east, +y north. camera_image: pixels of `image`, +y down.
     TrackPoint.x_m / y_m are in the scene's `units`."""
     type: Literal["four_way_intersection", "metric", "camera_image"] = "four_way_intersection"
-    units: Literal["m", "px"] = "m"
+    units: Literal["m", "px", "schematic"] = "m"
     extent_m: float | None = Field(None, description="Intersection: half-width of the square view around the origin")
     lane_width_m: float | None = None
     roads: dict[str, str] = Field(default_factory=dict, description="axis -> road name, e.g. {'ns': 'Main Rd'}")

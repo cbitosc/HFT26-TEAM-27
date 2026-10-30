@@ -553,3 +553,15 @@ Tests (`tests/test_workflow_reconstruction.py`, real sensor extractors, no key):
 
 Not done: Plotly (optional in the brief; the SVG viewer covers it); trajectories from video remain the separate camera path (calibration needed).
 
+## 2026-10-31 · Reconstruction panel for video-only evidence (schematic plan)
+
+Problem: for the user's CCTV clip (4 views, fixed camera, no lane-marking standard declared) the Reconstruction panel was empty ("no positional evidence") and only the annotated video (Event Analysis) showed anything. The user wants a reconstruction in its own panel too.
+
+Change: `reconstruct_schematic_from_camera` (`modules/reconstruction/camera.py`), used by `build_reconstruction` after metric and calibrated-camera paths. Tracks of a fixed, uncalibrated view (most tracks wins; others named in the note) are mapped onto a flat road with a stated nominal camera (horizon 0.15 view heights above the view, focal = 0.87 x view width). Result: a plan view where far vehicles are further away and lateral spread is un-foreshortened, in **schematic units** (`Scene.units` now also allows `"schematic"`, schema 1.3.1, additive; JSON schemas re-exported). Guard rails: every point `estimated` (confidence 0.25), no speeds, no collision marker, no plan for a moving camera, note says "NOT calibrated, NOT to scale" and how to get a measured one; the dashboard shows an amber warning banner, vehicles only while seen, small car icons, "estimated (schematic)" legend. A measured/calibrated map always wins when it exists. The "never guess" rule still holds: this is an explicitly labelled estimate under stated assumptions, not a measurement.
+
+Also: replay step is now a fixed 0.5 s; controls wrap on narrow panes; positions export labels schematic coordinates and carries a warning.
+
+Tests: schematic plan labelled / no speeds / depth order / none for a moving camera; `test_tracks_without_key...` now expects the schematic plan; evaluation case `cctv_no_standard` expects "schematic, no metres, speeds or impact point" (was "empty"). On the user's real clip (offline copy of the last run): view 2, 58 tracks, t 2.4-59.8 s; checked in the dashboard. `pytest` **148 passed**; frontend build OK; evaluation (no LLM) 25/25.
+
+Limit: the horizon/field-of-view are assumptions, so the shape of the plan can be off; only the relative order and movement should be read from it.
+

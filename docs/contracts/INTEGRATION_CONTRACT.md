@@ -1,6 +1,6 @@
 # Integration contract
 
-**Source of truth:** [`src/backend/app/schemas.py`](../../src/backend/app/schemas.py) (schema version `1.3.0`).
+**Source of truth:** [`src/backend/app/schemas.py`](../../src/backend/app/schemas.py) (schema version `1.3.1`).
 JSON Schema copies live in [`schemas/`](schemas/). Regenerate them with `python scripts/export_schemas.py`.
 Example payloads for every shape are in [`/fixtures`](../../fixtures).
 
@@ -62,6 +62,7 @@ extrapolated / tracked / estimated) and `confidence`.
 - **ConflictReport** — `conflicts[]`; each **Conflict** has `type ∈ {numeric_mismatch, timestamp_overlap, semantic, missing_evidence}`, `severity ∈ {low, medium, high}`, `title, description, observation_ids, t_range_s, details{}`
 - **Reconstruction** — `scene{extent_m, lane_width_m, roads}, t_min_s, t_max_s, vehicles[{vehicle_id, label, color, track[{t_s,x_m,y_m,heading_deg,speed_kmh}]}], collision{t_s,x_m,y_m,confidence,supporting_observation_ids}`
   - `scene.type = "four_way_intersection"` (units m, +y north) from sensor tracks, or `"camera_image"` (units **px**, +y down) from fixed-camera video: `scene.image{evidence_id, frame, width, height, views, fps, t_offset_s}` is the frame the tracks are drawn on (`/api/evidence/{id}/frames/{n}`). Track ids `T<view>-<n>` are moving vehicles, `S<view>-<n>` are verified stopped vehicles. Metric tracks win when both exist
+  - `scene.units = "schematic"` (type `metric`): layout and order of movement only. Image positions are mapped onto a flat road with a *nominal* camera (horizon just above the view, ~60 degree field of view), so units are not metres. Chosen over an empty panel when a fixed camera has tracks but no calibration; the dashboard shows it with a warning banner
   - Module 1 delivers camera tracks as observations with `action: "track"` and `attributes.points = [[t, x_px, y_px], …]`. The timeline and contradiction modules ignore them
 
 ## HTTP API (FastAPI, port 8000)
@@ -86,7 +87,7 @@ extrapolated / tracked / estimated) and `confidence`.
 | GET | `/api/observations` | `ObservationSet[]` |
 | GET | `/api/timeline` | `Timeline` |
 | GET | `/api/conflicts` | `ConflictReport` |
-| GET | `/api/reconstruction` | `Reconstruction`: the **top-down map in metres** (sensor/GPS paths, else a calibrated camera view on the road plane, else empty with `note` saying what evidence is missing) |
+| GET | `/api/reconstruction` | `Reconstruction`: the **top-down map in metres** (sensor/GPS paths, else a calibrated camera view on the road plane, else a **schematic** plan from an uncalibrated fixed camera (`scene.units: "schematic"`, every point `estimated`, no speeds, no collision marker, `note` states the assumptions), else empty with `note` saying what evidence is missing) |
 | GET | `/api/reconstruction/positions?download=false` | The same reconstruction as a plain "id and positions" JSON: `vehicles[{id, label, positions[{t_s, x, y, heading_deg, speed_kmh, basis, confidence}]}]`, `collision{t_s, x, y, confidence}`, and a `coordinate_system` block (metres +x east / +y north, or camera pixels). `download=true` sends it as `vehicle_positions.json` |
 | GET | `/api/event-analysis` | `Reconstruction` with a `camera_image` scene: footage with detections and image-space tracks (pixels), or `null` without video tracks |
 

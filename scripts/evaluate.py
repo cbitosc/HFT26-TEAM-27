@@ -96,7 +96,14 @@ def score(truth: dict, out: dict, llm: bool) -> list[dict]:
 
     if want := truth.get("reconstruction"):
         rec = out["reconstruction"]
-        if want.get("empty"):
+        if want.get("schematic"):
+            speeds = [p["speed_kmh"] for v in rec["vehicles"] for p in v["track"] if p.get("speed_kmh") is not None]
+            add("reconstruction", "uncalibrated camera -> labelled schematic plan, no metres, speeds or impact point",
+                rec["scene"]["units"] == "schematic" and bool(rec["vehicles"]) and not speeds and rec["collision"] is None
+                and "NOT to scale" in (rec.get("note") or "")
+                and all(p["source"] == "estimated" for v in rec["vehicles"] for p in v["track"]),
+                f"{rec['scene']['units']}, {len(rec['vehicles'])} vehicle(s)")
+        elif want.get("empty"):
             add("reconstruction", "no top-down map without positional evidence", not rec["vehicles"] and bool(rec.get("note")),
                 rec.get("note") or f"{len(rec['vehicles'])} vehicle(s)")
         else:
