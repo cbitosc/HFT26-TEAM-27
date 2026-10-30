@@ -133,3 +133,21 @@ Tests (`tests/`):
 
 - Created branch `feature/prototype` from `main` and committed everything above as one commit. Runtime `storage/`, `.venv/` and `node_modules/` are ignored
 - Next: one parallel session per module (1, 2, 3, 4, 5), each branching from `feature/prototype`
+
+## 2026-10-30 · Module 2: evidence extraction (sensor + witness)
+
+Branch `claude/mod2-extraction-0b6631`. Implements both stubs in `src/backend/app/modules/extraction/`; signatures unchanged, so the pipeline picks them up without edits.
+
+| File | Change |
+| --- | --- |
+| `modules/extraction/sensor.py` (new) | `extract_sensor` with Pandas. Detects the layout from headers (alias tables for time/speed/position/heading/brake/unit columns; signal logs by approach + state). Parses ISO and epoch-ms/s timestamps, computes `t_rel_s` against the reference time, converts mph and m/s to km/h and keeps `speed_<unit>_raw`, maps `OBD-7731` → V2. Emits key observations only: motion summary (first sample + `attributes.summary`), braking onset (brake flag rising edge, or ≥2 m/s² deceleration if there is no flag), entering the intersection box (±3.5 m), sudden heading change (≥10°), stopped, every signal change, and `sensor_gap` (step > 1.5× median interval) plus a warning. Locators `row:<n>` / `rows:<a>-<b>`, 1-based incl. header |
+| `modules/extraction/witness.py` (new) | `extract_witness` with Featherless (OpenAI-compatible `/chat/completions` over `httpx`, no new dependency). Sends the statement with line numbers, asks for JSON. Every claim is checked: `raw_text` must be a verbatim quote (else dropped with a warning) and the `line:<n>` locator comes from where the quote really is. Vehicle ids by rule (red + sedan/car → V1, white + SUV/vehicle → V2, else null). Confidence = hedge-word lexicon blended with the LLM's certainty label. Clock times → `timestamp` + `time_uncertainty_s` (default ±300 s), `t_rel_s` null as in the fixture. `attributes.order` renumbered 1..n. No API key → `NotImplementedError` (fixture served) |
+| `modules/extraction/__init__.py` | Re-exports both functions |
+| `app/config.py` | Added `INCIDENT_REFERENCE_TIME` (env override, default `2026-10-12T17:42:00+05:30`) and `FEATHERLESS_WITNESS_MODEL` (env override, default `Qwen/Qwen2.5-7B-Instruct`). Additive only |
+| `tests/test_extraction.py` (new) | Sensor extractor on the real `data/sensor` files checked against `scripts/scenario.py`: km/h values, mph conversion, V1 gap 6.0–7.5 s (2 samples, `rows:14-15`), braking onsets, signal changes = `SIGNAL_PHASES`, unique ids, unknown headers rejected, speed-only CSV. Witness extractor with a mocked LLM: validates, drops a hallucinated quote, corrects a wrong line number, maps vehicles, hedged claims score lower, orders renumbered; no-key fallback |
+
+### Verification
+
+- `pytest`: **28 passed**
+- Uploading the 3 sensor CSVs and 2 witness files via the API and running analysis: the 3 sensor stages report `real` (28 observations total), witness stages report `fixture` without a key
+- Not run: a live Featherless call (no key in this environment); frontend untouched, so `npm run build` not re-run
