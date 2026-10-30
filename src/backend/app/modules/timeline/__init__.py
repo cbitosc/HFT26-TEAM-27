@@ -456,6 +456,8 @@ class _Builder:
         view = first.get("view")
         where = "" if view is None else (f" (camera view {view})" if isinstance(view, int) else f" ({str(view).replace('_', ' ')})")
         who = " and ".join(vs) or (f"{first['label']}{where}" if first.get("label") else "Unidentified vehicle")
+        if len(vs) == 1 and vs[0].startswith("U-") and first.get("label"):
+            who = f"{first['label']}{where}"  # a provisional cross-source id reads worse than the description
         if not vs and members[0].action == "hazard":
             what = str(first.get("hazard", "hazard")).replace("_", " ")
             return f"Hazard: {what}{where}"
