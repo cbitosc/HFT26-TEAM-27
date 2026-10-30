@@ -103,6 +103,7 @@
           "default": "four_way_intersection",
           "enum": [
             "four_way_intersection",
+            "metric",
             "camera_image"
           ],
           "title": "Type",
@@ -160,6 +161,29 @@
             }
           ],
           "default": null
+        },
+        "center_m": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "metric: centre of the view (x, y) in metres",
+          "title": "Center M"
         }
       },
       "title": "Scene",
@@ -195,6 +219,40 @@
           ],
           "default": null,
           "title": "Speed Kmh"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "measured",
+                "interpolated",
+                "extrapolated",
+                "tracked",
+                "estimated"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "measured: at a sensor sample; interpolated/extrapolated: between/beyond samples; tracked: from video motion tracking; estimated: no positional evidence (scene default)",
+          "title": "Source"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
         }
       },
       "required": [
@@ -259,7 +317,7 @@
   },
   "properties": {
     "schema_version": {
-      "default": "1.1.0",
+      "default": "1.2.0",
       "title": "Schema Version",
       "type": "string"
     },

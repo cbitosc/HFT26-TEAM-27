@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 
 from app import config
-from app.schemas import Observation, ObservationSet, SourceType, Timeline, TimelineEvent
+from app.schemas import BASIS_RANK, Observation, ObservationSet, SourceType, Timeline, TimelineEvent
 
 def _ref() -> datetime:
     """The incident reference time (t = 0), read at call time: it is a per-case setting."""
@@ -384,6 +384,9 @@ class _Builder:
                 # clock claims say what happened, not when: they add no confidence
                 "confidence": round(_noisy_or(o.confidence for o in core + [a for a in c.attached if a.attributes.get("order") is not None]), 3),
                 "uncertainty_s": round(c.uncertainty, 3),
+                # Observation vs inference: the strongest kind of evidence behind the event, and the mix.
+                "basis": min((o.basis for o in members), key=lambda b: BASIS_RANK[b]),
+                "basis_counts": {b: n for b in BASIS_RANK if (n := sum(o.basis == b for o in members))},
             })
         drafts.sort(key=lambda d: (d["t_start_s"], CATEGORY_ORDER[d["category"]], d["label"]))
         return [

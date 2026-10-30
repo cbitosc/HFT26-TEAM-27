@@ -87,7 +87,7 @@ def _empty(model):
     if model is ConflictReport:
         return ConflictReport(**common, conflicts=[])
     if model is Reconstruction:
-        return Reconstruction(**common, scene=Scene(extent_m=60, lane_width_m=3.5), t_min_s=0.0, t_max_s=0.0,
+        return Reconstruction(**common, scene=Scene(type="metric", extent_m=10), t_min_s=0.0, t_max_s=0.0,
                               vehicles=[], collision=None)
     return None
 
@@ -165,6 +165,26 @@ def _sha256(path: str) -> str | None:
     return h.hexdigest()
 
 
+def _prepare_run_frame(evidence: list[Evidence]) -> None:
+    """Shared frame of reference for this run: one GPS origin for all files and, unless the case sets
+    it, t = 0 at the earliest absolute timestamp in the sensor evidence (instead of a placeholder)."""
+    from app.modules.extraction.sensor import scan_csv
+
+    scans = [(e, scan_csv(e.stored_path)) for e in evidence if e.kind == SourceType.sensor]
+    latlons = [s["latlon"] for _, s in scans if "latlon" in s]
+    config.GPS_ORIGIN = (min(a for a, _ in latlons), min(b for _, b in latlons)) if latlons else None
+    if config.REFERENCE_SOURCE == "case":
+        return
+    stamped = [(s["earliest"], e.filename) for e, s in scans if "earliest" in s]
+    if stamped:
+        earliest, name = min(stamped, key=lambda p: p[0])
+        config.INCIDENT_REFERENCE_TIME, config.REFERENCE_SOURCE = earliest, "evidence"
+        config.REFERENCE_DETAIL = f"earliest timestamp in {name}"
+    else:
+        config.REFERENCE_SOURCE = "default"
+        config.REFERENCE_DETAIL = ""
+
+
 def _run(tracker: Tracker) -> AnalysisRun:
     started = _now()
     run_id = uuid.uuid4().hex[:8]
@@ -180,6 +200,7 @@ def _run(tracker: Tracker) -> AnalysisRun:
             store.audit("evidence_integrity_mismatch", id=e.id, filename=e.filename, uploaded=e.sha256, now=now)
         manifest.append(EvidenceRef(id=e.id, filename=e.filename, sha256=now))
     store.audit("analysis_started", run_id=run_id, demo=demo, evidence=[m.model_dump() for m in manifest])
+    _prepare_run_frame(evidence)
     later = ["2c. fusion", "3. timeline", "4. contradictions", "5. reconstruction"]
     tracker.plan(([_stage_name(e) for e in evidence] if evidence else [s for s, _f, _x in EXTRACTORS.values()]) + later)
 

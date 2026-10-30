@@ -4,12 +4,35 @@ from datetime import datetime, timezone
 
 import cv2
 import numpy as np
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.modules.ingestion import calibration as cal
 
 F, CAM_H, CX, YH, W, H = 400.0, 6.0, 240.0, 60.0, 480, 300   # level pinhole camera: K = F * CAM_H = 2400
+
+
+@pytest.fixture(autouse=True)
+def motorway_markings(monkeypatch):
+    """The synthetic road is painted to the de_motorway standard (6 m dash, 12 m gap, 3.75 m lane)."""
+    from app import config
+    monkeypatch.setattr(config, "LANE_MARKINGS", {"preset": "de_motorway", **config.LANE_PRESETS["de_motorway"]})
+
+
+def test_no_declared_standard_means_no_automatic_calibration(monkeypatch):
+    from app import config
+    monkeypatch.setattr(config, "LANE_MARKINGS", None)
+    c = cal.auto_calibrate(synthetic_road(), view=1, box=(0, 0, W, H))
+    assert not c.ok and "no lane-marking standard" in c.reason
+
+
+def test_a_wrong_standard_scales_speeds_so_it_must_be_declared(monkeypatch):
+    """Same road read as US markings (3.05 m + 9.14 m) gives a 1.5x smaller scale: why it is never guessed."""
+    from app import config
+    monkeypatch.setattr(config, "LANE_MARKINGS", {"preset": "us_freeway", **config.LANE_PRESETS["us_freeway"]})
+    c = cal.auto_calibrate(synthetic_road(), view=1, box=(0, 0, W, H))
+    assert c.ok is False or abs(c.k / (F * CAM_H) - (3.048 + 9.144) / 18) < 0.1
 
 
 def project(x_m, z_m):

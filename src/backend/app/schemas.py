@@ -11,9 +11,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-SCHEMA_VERSION = "1.1.0"
+SCHEMA_VERSION = "1.2.0"
 
 
 # ---------------------------------------------------------------- evidence
@@ -60,6 +60,21 @@ class Observation(BaseModel):
     attributes: dict[str, Any] = Field(default_factory=dict, description="speed_kmh, heading_deg, signal_state, x_m, y_m, ...")
     confidence: float = Field(ge=0, le=1)
     raw_text: str | None = Field(None, description="Verbatim quote for witness-derived observations")
+    basis: Literal["measured", "reported", "derived", "inferred"] | None = Field(
+        None, description="measured: read from a sensor/log; reported: a person's statement; derived: computed "
+                          "deterministically (tracking, calibration, fusion rules); inferred: an AI model's reading. "
+                          "Defaults by source: sensor measured, witness reported, video inferred")
+    derived_from: list[str] = Field(default_factory=list, description="Observation ids this one was computed from")
+
+    @model_validator(mode="after")
+    def _default_basis(self):
+        if self.basis is None:
+            self.basis = {SourceType.sensor: "measured", SourceType.witness: "reported",
+                          SourceType.video: "inferred"}[self.source_type]
+        return self
+
+
+BASIS_RANK = {"measured": 0, "derived": 1, "reported": 2, "inferred": 3}
 
 
 class ObservationSet(BaseModel):
@@ -87,6 +102,9 @@ class TimelineEvent(BaseModel):
     source_types: list[SourceType]
     confidence: float = Field(ge=0, le=1)
     uncertainty_s: float = Field(0.0, ge=0)
+    basis: Literal["measured", "reported", "derived", "inferred"] | None = Field(
+        None, description="Strongest basis among the supporting observations (measured > derived > reported > inferred)")
+    basis_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class Timeline(BaseModel):
@@ -121,6 +139,7 @@ class Conflict(BaseModel):
     observation_ids: list[str]
     t_range_s: tuple[float, float] | None = None
     details: dict[str, Any] = Field(default_factory=dict)
+    basis: Literal["rule", "llm"] = Field("rule", description="rule: deterministic check; llm: AI-detected, unverified")
 
 
 class ConflictReport(BaseModel):
@@ -138,6 +157,10 @@ class TrackPoint(BaseModel):
     y_m: float
     heading_deg: float
     speed_kmh: float | None = None
+    source: Literal["measured", "interpolated", "extrapolated", "tracked", "estimated"] | None = Field(
+        None, description="measured: at a sensor sample; interpolated/extrapolated: between/beyond samples; "
+                          "tracked: from video motion tracking; estimated: no positional evidence (scene default)")
+    confidence: float | None = Field(None, ge=0, le=1)
 
 
 class VehicleTrack(BaseModel):
@@ -171,12 +194,13 @@ class CameraImage(BaseModel):
 class Scene(BaseModel):
     """four_way_intersection: metres, +x east, +y north. camera_image: pixels of `image`, +y down.
     TrackPoint.x_m / y_m are in the scene's `units`."""
-    type: Literal["four_way_intersection", "camera_image"] = "four_way_intersection"
+    type: Literal["four_way_intersection", "metric", "camera_image"] = "four_way_intersection"
     units: Literal["m", "px"] = "m"
     extent_m: float | None = Field(None, description="Intersection: half-width of the square view around the origin")
     lane_width_m: float | None = None
     roads: dict[str, str] = Field(default_factory=dict, description="axis -> road name, e.g. {'ns': 'Main Rd'}")
     image: CameraImage | None = None
+    center_m: tuple[float, float] | None = Field(None, description="metric: centre of the view (x, y) in metres")
 
 
 class Reconstruction(BaseModel):
@@ -226,6 +250,32 @@ class IncidentReport(BaseModel):
     markdown: str
 
 
+class VehicleSpec(BaseModel):
+    """A vehicle the investigator knows about. Evidence is linked to it by id, alias or description."""
+    id: str = Field(min_length=1, max_length=40)
+    description: str = Field("", max_length=200, description="e.g. 'red sedan, TS09 AB 1234'")
+    aliases: list[str] = Field(default_factory=list, description="Other ids in the evidence, e.g. a telemetry unit id")
+    ego: bool = Field(False, description="Carries the dashcam")
+
+
+class SceneSpec(BaseModel):
+    """What is known about the place. Nothing is assumed when type is 'unknown'."""
+    type: Literal["unknown", "junction", "road"] = "unknown"
+    traffic_side: Literal["left", "right"] | None = None
+    roads: dict[str, str] = Field(default_factory=dict, description="junction: {'ns': name, 'ew': name}")
+    lane_width_m: float | None = Field(None, gt=0, le=10)
+    junction_center_m: tuple[float, float] = (0.0, 0.0)
+    junction_radius_m: float | None = Field(None, gt=0, description="Box around the centre counted as 'in the junction'")
+
+
+class LaneMarkings(BaseModel):
+    """Lane-line standard used by automatic camera calibration (dash + gap = marking period)."""
+    preset: str | None = None
+    dash_m: float = Field(gt=0)
+    gap_m: float = Field(gt=0)
+    lane_width_m: float = Field(3.5, gt=0)
+
+
 class IncidentInfo(BaseModel):
     """Case details (GET/PUT /api/incident). reference_time is t = 0 for every module."""
     incident_id: str
@@ -233,6 +283,9 @@ class IncidentInfo(BaseModel):
     location: str = ""
     reference_time: datetime
     reference_time_confirmed: bool = Field(description="False while the demo default is in use")
+    vehicles: list[VehicleSpec] = Field(default_factory=list)
+    scene: SceneSpec = Field(default_factory=SceneSpec)
+    lane_markings: LaneMarkings | None = Field(None, description="None: no automatic camera calibration")
 
 
 class IncidentUpdate(BaseModel):
@@ -240,6 +293,10 @@ class IncidentUpdate(BaseModel):
     title: str | None = Field(None, max_length=200)
     location: str | None = Field(None, max_length=200)
     reference_time: datetime | None = Field(None, description="ISO 8601 with a UTC offset")
+    vehicles: list[VehicleSpec] | None = None
+    scene: SceneSpec | None = None
+    lane_markings: LaneMarkings | str | None = Field(
+        None, description="A LaneMarkings object or a preset name (see GET /api/incident/lane-presets)")
 
 
 class CalibrationPoints(BaseModel):

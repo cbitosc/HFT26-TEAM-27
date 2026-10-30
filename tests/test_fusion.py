@@ -6,6 +6,10 @@ from app.modules.extraction import extract_sensor
 from app.modules.fusion import fuse, infer_collisions
 from app.schemas import Evidence, Observation, SourceRef, SourceType
 
+import pytest as _pytest
+
+pytestmark = _pytest.mark.usefixtures("demo_case")  # demo data: declared vehicles, junction, clock
+
 DATA = Path(__file__).resolve().parents[1] / "data" / "sensor"
 
 

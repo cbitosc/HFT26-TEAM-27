@@ -100,6 +100,33 @@
           "default": null,
           "description": "Verbatim quote for witness-derived observations",
           "title": "Raw Text"
+        },
+        "basis": {
+          "anyOf": [
+            {
+              "enum": [
+                "measured",
+                "reported",
+                "derived",
+                "inferred"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "measured: read from a sensor/log; reported: a person's statement; derived: computed deterministically (tracking, calibration, fusion rules); inferred: an AI model's reading. Defaults by source: sensor measured, witness reported, video inferred",
+          "title": "Basis"
+        },
+        "derived_from": {
+          "description": "Observation ids this one was computed from",
+          "items": {
+            "type": "string"
+          },
+          "title": "Derived From",
+          "type": "array"
         }
       },
       "required": [
@@ -150,7 +177,7 @@
   "description": "Output of one extractor run over one piece of evidence.",
   "properties": {
     "schema_version": {
-      "default": "1.1.0",
+      "default": "1.2.0",
       "title": "Schema Version",
       "type": "string"
     },

@@ -46,8 +46,11 @@ MAX_FRAMES = int(os.environ.get("VIDEO_MAX_FRAMES", "24"))    # vision-model cal
 WORKERS = int(os.environ.get("VIDEO_WORKERS", "24"))  # = MAX_FRAMES: one round of calls
 # Seconds between the incident reference time and frame 0 (dashcam clock offset).
 T0_OFFSET_S = float(os.environ.get("VIDEO_T0_OFFSET_S", "0"))
-# Canonical id of the vehicle carrying the dashcam.
-EGO_VEHICLE_ID = os.environ.get("VIDEO_EGO_VEHICLE_ID", "V1")
+def ego_vehicle_id() -> str:
+    """The case's dashcam vehicle (declared with ego: true), else the neutral id "EGO"."""
+    from app import config
+    return next((v["id"] for v in config.CASE_VEHICLES if v.get("ego")), None) or \
+        os.environ.get("VIDEO_EGO_VEHICLE_ID", "EGO")
 MIN_CONFIDENCE = 0.2
 CAMERA_MODE = os.environ.get("VIDEO_CAMERA_MODE", "auto").strip().lower()
 TRACKING = os.environ.get("VIDEO_TRACKING", "1") != "0"  # fixed cameras: OpenCV motion tracks
@@ -274,6 +277,7 @@ def tracks_to_observations(evidence: Evidence, info: VideoInfo, tracks: list[Tra
             vehicle_id=None,
             vehicle_description=f"moving vehicle, camera view {tr.view}",
             action="track",
+            basis="derived",  # OpenCV motion tracking: deterministic, not a model's reading
             attributes={"track_id": f"T{tr.view}-{n:03d}", "view": tr.view, "camera": "fixed", "units": "px",
                         "frame_size": [info.width, info.height], "fps": round(info.fps, 3),
                         "view_box": list(views[tr.view - 1]), "grid": [list(v) for v in views],
@@ -427,7 +431,7 @@ def frames_to_observations(
             attrs = {"ego": True}
             if a.ego.cue:
                 attrs["cue"] = a.ego.cue
-            emit(frame, a.ego.action, a.ego.confidence, vehicle_id=EGO_VEHICLE_ID,
+            emit(frame, a.ego.action, a.ego.confidence, vehicle_id=ego_vehicle_id(),
                  description="ego vehicle (dashcam host)", attributes=attrs)
 
         for v in a.vehicles:
@@ -464,7 +468,7 @@ def frames_to_observations(
         if c and c.visible and c.confidence >= MIN_CONFIDENCE and not collision_seen:
             collision_seen = True
             vehicles = c.vehicles if fixed else [
-                EGO_VEHICLE_ID if _key(x) in {"ego", "ego vehicle", "dashcam"} else x for x in c.vehicles]
+                ego_vehicle_id() if _key(x) in {"ego", "ego vehicle", "dashcam"} else x for x in c.vehicles]
             attrs = {"vehicles": vehicles}
             if c.impact:
                 attrs["impact_side"] = c.impact

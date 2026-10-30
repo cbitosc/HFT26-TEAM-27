@@ -6,8 +6,9 @@ Observation:
 
 * ``raw_text`` must be a verbatim quote from the statement; the ``line:<n>``
   locator is taken from where the quote actually is, not from the LLM
-* vehicle ids are mapped by rules (red sedan/car -> V1, white SUV -> V2) and
-  left null when the description is ambiguous
+* vehicle ids come from the case's vehicle list (id, description, aliases): a description is
+  linked only when its colour and type words match exactly one declared vehicle; otherwise it
+  stays null and the fusion stage may link it across sources
 * confidence comes from hedging words in the quote, blended with the LLM's
   own certainty label
 * clock times ("around 5:40", "quarter to six") become ``timestamp`` with a
@@ -35,24 +36,24 @@ TIMEOUT_S = 60.0
 ACTIONS = ["moving", "braking", "accelerating", "no_braking", "entering_intersection", "collision",
            "post_collision_slide", "stopped", "signal_state"]
 
-SYSTEM_PROMPT = f"""You extract structured facts from traffic-accident witness statements.
+SYSTEM_PROMPT = """You extract structured facts from traffic-accident witness statements.
 Return ONLY a JSON object, no prose, with this shape:
-{{"observations": [{{
+{"observations": [{
   "line": <int, the line number where the quote starts>,
   "raw_text": "<exact verbatim quote from the statement, copied character for character>",
   "vehicle_description": "<how the witness describes the vehicle, e.g. 'red sedan', or null>",
-  "action": "<one of: {', '.join(ACTIONS)}>",
+  "action": "<one of: %(actions)s>",
   "order": <int, order in which this happened according to the witness, 1 = first; null for timing remarks>,
   "clock_time": "<HH:MM 24h if the witness gives a clock time for the incident, else null>",
   "time_uncertainty_min": <number, how many minutes the clock time could be off, else null>,
-  "attributes": {{"speed_kmh": <number or null>, "speed_qualifier": "<at least|about|...>",
+  "attributes": {"speed_kmh": <number or null>, "speed_qualifier": "<at least|about|...>",
                   "direction": "<northbound|southbound|eastbound|westbound or null>",
                   "approach": "<NB|SB|EB|WB or null>", "signal_state": "<green|yellow|red or null>",
-                  "vehicles": ["<descriptions of every vehicle involved, for collisions>"]}},
+                  "vehicles": ["<descriptions of every vehicle involved, for collisions>"]},
   "certainty": "<certain|fairly_sure|unsure|guess>"
-}}]}}
+}]}
 Rules: one observation per distinct claim; do not invent facts; keep hedging words in raw_text;
-the evening is 17:00-19:00 (\"5:40 in the evening\" = 17:40, \"quarter to six\" = 17:45).
+%(time_context)s
 Always extract, each as its own observation: every traffic-light colour mentioned (action "signal_state",
 attributes.signal_state, vehicle_description = whose light it was), every speed estimate, every clock time
 for the incident (action "collision" with clock_time), every vehicle description, including hedged ones.
@@ -70,9 +71,27 @@ CERTAIN_CUES = r"\b(i am sure|i'm sure|definitely|certainly|clearly|i saw)\b"
 LLM_CERTAINTY = {"certain": 0.85, "fairly_sure": 0.65, "unsure": 0.5, "guess": 0.4}
 DEFAULT_CONFIDENCE = 0.75
 
-COLOURS = {"red": "V1", "maroon": "V1", "white": "V2"}
-TYPES = {"V1": {"sedan", "car", "hatchback"}, "V2": {"suv", "jeep", "car", "vehicle", "van"}}
-VEHICLE_WORDS = r"\b(car|cars|sedan|suv|van|truck|bus|bike|motorcycle|auto|lorry|vehicle|jeep|hatchback)\b"
+COLOUR_WORDS = r"\b(red|maroon|white|black|silver|grey|gray|blue|green|yellow|orange|brown|gold|beige|purple|pink)\b"
+VEHICLE_WORDS = (r"\b(car|sedan|suv|van|truck|lorry|bus|bike|motorbike|motorcycle|scooter|auto|rickshaw|"
+                 r"jeep|hatchback|pickup|taxi|cab|tractor|cyclist|bicycle|pedestrian)\b")
+GENERIC_TYPES = {"car", "vehicle"}  # compatible with any specific car-like type
+
+
+def _words(text: str) -> tuple[set[str], set[str]]:
+    t = (text or "").lower()
+    colours = {("grey" if c == "gray" else c) for c in re.findall(COLOUR_WORDS, t)}
+    return colours, set(re.findall(VEHICLE_WORDS, t))
+
+
+def prompt() -> str:
+    ref = config.INCIDENT_REFERENCE_TIME
+    if config.REFERENCE_SOURCE == "default":
+        ctx = ("Convert clock times to HH:MM 24h using the statement's own words (\"in the evening\", "
+               "\"PM\"); if the time of day is ambiguous, give your best reading and lower certainty.")
+    else:
+        ctx = (f"The incident happened on {ref:%Y-%m-%d} at about {ref:%H:%M} local time; use this to resolve "
+               "ambiguous clock times (e.g. AM vs PM) to HH:MM 24h.")
+    return SYSTEM_PROMPT % {"time_context": ctx, "actions": ", ".join(ACTIONS)}
 
 
 def _chat(messages: list[dict]) -> str:
@@ -140,19 +159,29 @@ class _Statement:
         return None
 
 
-def resolve_vehicle(description: str | None) -> str | None:
-    """Map a witness description to V1/V2 only when colour and type both agree."""
+def resolve_vehicle(description: str | None, vehicles: list[dict] | None = None) -> str | None:
+    """A declared vehicle id for a witness description, only when exactly one declared vehicle matches.
+
+    Match: the declared id or an alias appears in the text, or the colours agree and the types are
+    compatible ("car" fits any car-like type). With no declared vehicles nothing is resolved here.
+    """
     if not description:
         return None
-    d = description.lower()
-    ids = {vid for colour, vid in COLOURS.items() if re.search(rf"\b{colour}\b", d)}
-    if len(ids) != 1:
+    vehicles = config.CASE_VEHICLES if vehicles is None else vehicles
+    text = description.lower()
+    by_name = [v["id"] for v in vehicles
+               if any(re.search(rf"\b{re.escape(n.lower())}\b", text) for n in [v["id"], *v.get("aliases", [])])]
+    if len(by_name) == 1:
+        return by_name[0]
+    colours, types = _words(description)
+    if not colours:
         return None
-    vid = ids.pop()
-    types = set(re.findall(VEHICLE_WORDS, d))
-    if types and not types & TYPES[vid]:
-        return None
-    return vid
+    hits = []
+    for v in vehicles:
+        vc, vt = _words(v.get("description", ""))
+        if colours & vc and (not types or not vt or (types | vt) & GENERIC_TYPES or types & vt):
+            hits.append(v["id"])
+    return hits[0] if len(hits) == 1 else None
 
 
 def _confidence(raw: str, certainty: str | None) -> float:
@@ -236,7 +265,7 @@ def extract_witness(evidence: Evidence) -> ObservationSet:
     stmt = _Statement(text)
     numbered = "\n".join(f"{n:>3}| {line}" for n, line in enumerate(stmt.lines, start=1))
     content = _chat([
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": prompt()},
         {"role": "user", "content": f"Statement (line numbers before '|'):\n{numbered}"},
     ])
     items = _parse_json(content).get("observations") or []

@@ -18,6 +18,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import scenario as sc  # noqa: E402
 
+import pytest as _pytest
+
+pytestmark = _pytest.mark.usefixtures("demo_case")  # demo data: declared vehicles, junction, clock
+
 
 def _evidence(path: Path, kind: SourceType) -> Evidence:
     return Evidence(id=f"ev_{path.stem}", kind=kind, filename=path.name, size_bytes=path.stat().st_size,
@@ -112,7 +116,7 @@ def test_speed_only_file_infers_braking_from_deceleration(tmp_path):
     braking = _by_action(s, "braking")[0]
     assert braking.t_rel_s == 2.0 - sc.T0.timestamp() and braking.attributes["inferred_from"] == "deceleration"
     assert _by_action(s, "stopped")[0].source_ref.locator == "row:5"
-    assert any("vehicle_id left null" in w for w in s.warnings)
+    assert braking.vehicle_id == "plain" and any("named 'plain' after the file" in w for w in s.warnings)
 
 
 # ----------------------------------------------------------------- witness

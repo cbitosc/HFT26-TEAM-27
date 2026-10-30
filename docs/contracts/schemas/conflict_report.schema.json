@@ -53,6 +53,16 @@
           "additionalProperties": true,
           "title": "Details",
           "type": "object"
+        },
+        "basis": {
+          "default": "rule",
+          "description": "rule: deterministic check; llm: AI-detected, unverified",
+          "enum": [
+            "rule",
+            "llm"
+          ],
+          "title": "Basis",
+          "type": "string"
         }
       },
       "required": [
@@ -88,7 +98,7 @@
   },
   "properties": {
     "schema_version": {
-      "default": "1.1.0",
+      "default": "1.2.0",
       "title": "Schema Version",
       "type": "string"
     },

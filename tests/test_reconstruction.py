@@ -16,6 +16,10 @@ from app.schemas import ConflictReport, Observation, ObservationSet, Reconstruct
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import scenario  # noqa: E402
 
+import pytest as _pytest
+
+pytestmark = _pytest.mark.usefixtures("demo_case")  # demo data: declared vehicles, junction, clock
+
 OBS = ["video_observations.json", "witness_observations.json", "sensor_observations.json"]
 COLLISION_XY = scenario.COLLISION_XY
 

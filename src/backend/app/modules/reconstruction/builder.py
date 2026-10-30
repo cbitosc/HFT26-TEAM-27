@@ -1,4 +1,8 @@
-"""Trajectory reconstruction on the predefined four-way intersection.
+"""Trajectory reconstruction from positioned evidence (metres).
+
+Scene: a declared junction (case scene type "junction") is drawn as a four-way intersection with the
+case's roads, lane width and traffic side. Otherwise the scene is a plain metric map sized to the data,
+and nothing is assumed about roads.
 
 1. Keyframes: every observation with a time and numeric x_m/y_m is a measured
    point of its vehicle (one per instant; the most confident one wins).
@@ -8,9 +12,10 @@
    (so the V1 sensor gap is bridged at constant velocity). Elsewhere, e.g.
    across the collision impulse, we interpolate in a straight line. Outside the
    keyframes a vehicle continues at constant velocity, or holds if stopped.
-3. Vehicles that are mentioned but never positioned get an approach-direction
-   default: constant speed along their lane, reaching the conflict point at
-   the collision (or their entering_intersection) time.
+3. Only at a declared junction: vehicles that are mentioned but never positioned
+   get an approach-direction default (constant speed along their lane, reaching
+   the conflict point at the collision or entering time). Those points are
+   labelled "estimated" with low confidence.
 4. The collision marker is emitted only if the timeline has a collision event
    backed by known observations. It sits at the vehicles' closest approach.
 
@@ -25,6 +30,7 @@ from datetime import datetime, timezone
 from statistics import median
 from typing import Callable
 
+from app import config
 from app.schemas import (
     CollisionMarker,
     ConflictReport,
@@ -39,20 +45,21 @@ from app.schemas import (
     VehicleTrack,
 )
 
-EXTENT_M = 60.0
-LANE_W = 3.5
-ROADS = {"ns": "Main Rd", "ew": "5th Ave"}
+EXTENT_M = 60.0   # junction view: half-width around the centre
 STEP_S = 0.5
+LANE_W = 3.5      # replaced by the case's lane width at a junction (see _approaches)
 KMH = 3.6
 DEFAULT_SPEED_KMH = 40.0
 
-# Left-hand traffic: approach -> (heading_deg, fixed lane coordinate, axis it travels along).
-APPROACHES: dict[str, tuple[float, float, str]] = {
-    "NB": (0.0, -LANE_W / 2, "y"),
-    "SB": (180.0, LANE_W / 2, "y"),
-    "EB": (90.0, LANE_W / 2, "x"),
-    "WB": (270.0, -LANE_W / 2, "x"),
-}
+# approach -> (heading_deg, fixed lane coordinate, axis it travels along). Rebuilt per run from the
+# case: lane width and traffic side (left-hand traffic keeps to the left of the centre line).
+APPROACHES: dict[str, tuple[float, float, str]] = {}
+
+
+def _approaches(lane_w: float, side: str) -> dict[str, tuple[float, float, str]]:
+    s = 1 if side == "left" else -1
+    return {"NB": (0.0, -s * lane_w / 2, "y"), "SB": (180.0, s * lane_w / 2, "y"),
+            "EB": (90.0, s * lane_w / 2, "x"), "WB": (270.0, -s * lane_w / 2, "x")}
 DIRECTION_WORDS = {"northbound": "NB", "southbound": "SB", "eastbound": "EB", "westbound": "WB",
                    "north": "NB", "south": "SB", "east": "EB", "west": "WB"}
 COLORS = {"red": "#dc2626", "white": "#64748b", "black": "#0f172a", "blue": "#2563eb", "silver": "#94a3b8",
@@ -375,6 +382,11 @@ def reconstruct(observation_sets: list[ObservationSet], timeline: Timeline,
     observations = [o for s in observation_sets for o in s.observations]
     by_id = {o.id: o for o in observations}
     ref = timeline.reference_time
+    case_scene = config.CASE_SCENE or {}
+    junction = case_scene.get("type") == "junction"
+    lane_w = float(case_scene.get("lane_width_m") or LANE_W)
+    APPROACHES.clear()
+    APPROACHES.update(_approaches(lane_w, case_scene.get("traffic_side") or "right"))
 
     obs_by_vehicle: dict[str, list[Observation]] = {}
     for o in observations:
@@ -392,11 +404,13 @@ def reconstruct(observation_sets: list[ObservationSet], timeline: Timeline,
     collision = _collision_event(timeline, set(by_id))
     coll_vids = _collision_vehicles(*collision, by_id) if collision else []
 
-    # Approach-direction defaults for vehicles we know of but never positioned.
+    # Approach-direction defaults for vehicles we know of but never positioned (declared junctions only).
     approaches = {vid: _approach_of(obs_by_vehicle.get(vid, [])) for vid in vehicle_ids}
+    estimated: set[str] = set()
     for vid in vehicle_ids:
-        if vid in samplers or approaches[vid] is None:
+        if not junction or vid in samplers or approaches[vid] is None:
             continue
+        estimated.add(vid)
         own = obs_by_vehicle.get(vid, [])
         speeds = [s for o in own if o.source_type != SourceType.witness and (s := _speed_ms(o))]
         speeds = speeds or [s for o in own if (s := _speed_ms(o))]
@@ -414,10 +428,17 @@ def reconstruct(observation_sets: list[ObservationSet], timeline: Timeline,
         samplers[vid] = _lane_sampler(approaches[vid], conflict, t_arr, speed, hold)
         source_ids[vid] = [o.id for o in own]
 
-    # Window: ~5 s of approach before the collision and 3 s of aftermath.
-    anchor = collision[0].t_start_s if collision else _anchor_without_collision(keyframes, timeline)
-    t_min = _half_floor(anchor - 5.0)
-    t_max = _half_ceil(anchor + 3.0)
+    # Window: ~5 s of approach before the collision and 3 s of aftermath; without a collision, the
+    # whole span of the positioned evidence.
+    if collision:
+        anchor = collision[0].t_start_s
+        t_min, t_max = _half_floor(anchor - 5.0), _half_ceil(anchor + 3.0)
+    elif keyframes:
+        t_min = _half_floor(min(k[0].t for k in keyframes.values()))
+        t_max = _half_ceil(max(k[-1].t for k in keyframes.values()))
+    else:
+        anchor = _anchor_without_collision(keyframes, timeline)
+        t_min, t_max = _half_floor(anchor - 5.0), _half_ceil(anchor + 3.0)
     grid = [round(t_min + i * STEP_S, 3) for i in range(int(round((t_max - t_min) / STEP_S)) + 1)]
 
     vehicles = []
@@ -425,10 +446,13 @@ def reconstruct(observation_sets: list[ObservationSet], timeline: Timeline,
         desc = _description(obs_by_vehicle.get(vid, []))
         short = desc.split(",")[0].strip() if desc else None
         track = []
+        kfs = keyframes.get(vid, [])
         for t in grid:
             x, y, h, s = samplers[vid](t)
+            source, conf = _point_basis(t, kfs, vid in estimated)
             track.append(TrackPoint(t_s=t, x_m=round(x, 2), y_m=round(y, 2),
-                                    heading_deg=round(_norm(h), 1), speed_kmh=round(s * KMH, 1)))
+                                    heading_deg=round(_norm(h), 1), speed_kmh=round(s * KMH, 1),
+                                    source=source, confidence=conf))
         vehicles.append(VehicleTrack(vehicle_id=vid, label=f"{vid} · {short}" if short else vid,
                                      color=_color(desc, i), description=desc, track=track,
                                      source_observation_ids=source_ids[vid]))
@@ -443,9 +467,30 @@ def reconstruct(observation_sets: list[ObservationSet], timeline: Timeline,
             marker = CollisionMarker(t_s=round(t, 2), x_m=round(x, 2), y_m=round(y, 2),
                                      confidence=round(min(1.0, conf), 2), supporting_observation_ids=support)
 
+    if junction:
+        scene = Scene(type="four_way_intersection", extent_m=EXTENT_M, lane_width_m=lane_w,
+                      roads=dict(case_scene.get("roads") or {}))
+    else:
+        xs = [p.x_m for v in vehicles for p in v.track] or [0.0]
+        ys = [p.y_m for v in vehicles for p in v.track] or [0.0]
+        half = max(10.0, (max(xs) - min(xs)) / 2, (max(ys) - min(ys)) / 2) * 1.15
+        scene = Scene(type="metric", units="m", extent_m=round(half, 1),
+                      center_m=(round((max(xs) + min(xs)) / 2, 2), round((max(ys) + min(ys)) / 2, 2)))
     return Reconstruction(incident_id=timeline.incident_id, generated_at=datetime.now(timezone.utc),
-                          scene=Scene(extent_m=EXTENT_M, lane_width_m=LANE_W, roads=ROADS),
-                          t_min_s=t_min, t_max_s=t_max, vehicles=vehicles, collision=marker)
+                          scene=scene, t_min_s=t_min, t_max_s=t_max, vehicles=vehicles, collision=marker)
+
+
+def _point_basis(t: float, kfs: list[Keyframe], estimated: bool) -> tuple[str, float]:
+    """Where a track point comes from, and how far to trust it (decays away from measured samples)."""
+    if estimated or not kfs:
+        return "estimated", 0.2
+    near = min(kfs, key=lambda k: abs(k.t - t))
+    gap = abs(near.t - t)
+    if gap < 1e-6:
+        return "measured", round(near.confidence, 2)
+    if kfs[0].t < t < kfs[-1].t:
+        return "interpolated", round(near.confidence * math.exp(-gap / 5.0), 2)
+    return "extrapolated", round(near.confidence * 0.6 * math.exp(-gap / 2.0), 2)
 
 
 def _anchor_without_collision(keyframes: dict[str, list[Keyframe]], timeline: Timeline) -> float:

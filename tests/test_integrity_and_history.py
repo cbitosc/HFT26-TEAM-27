@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
+
 client = TestClient(app)
 DATA = Path(__file__).resolve().parents[1] / "data"
 
@@ -51,7 +52,7 @@ def test_audit_log_and_run_history_with_manifest():
     assert client.get("/api/runs/..%2F..%2Fetc/run").status_code == 404
 
 
-def test_incident_report_markdown_and_json(monkeypatch):
+def test_incident_report_markdown_and_json(monkeypatch, demo_case):
     from app import config
 
     monkeypatch.setattr(config, "FEATHERLESS_API_KEY", "")
@@ -84,7 +85,8 @@ def test_incident_details_drive_times_and_report(monkeypatch):
     _upload("v1_telematics.csv", (DATA / "sensor" / "v1_telematics.csv").read_bytes())
     client.post("/api/analysis/run")
     md = client.get("/api/report?format=markdown").text
-    assert "reference time **not set**" in md and "| 17:42" not in md  # no invented clock times
+    # No reference time set: t = 0 is the earliest timestamp in the evidence, and the report says so.
+    assert "from the evidence: earliest timestamp in v1_telematics.csv" in md and "| 17:42:00 |" in md
 
     r = client.put("/api/incident", json={"incident_id": "CASE-17", "title": "Main Rd junction collision",
                                           "reference_time": "2026-10-12T17:42:05+05:30"})

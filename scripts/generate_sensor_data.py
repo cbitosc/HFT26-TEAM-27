@@ -71,3 +71,26 @@ if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
     for p in (write_v1(), write_v2(), write_signals()):
         print(f"wrote {p.relative_to(OUT.parents[1])}")
+
+
+def write_case() -> Path:
+    """The demo's case file: what an investigator would declare (vehicles, junction, clock)."""
+    import json
+    path = OUT.parent / "case.json"
+    path.write_text(json.dumps({
+        "incident_id": sc.INCIDENT_ID,
+        "title": "Red sedan / white SUV junction collision (demo)",
+        "location": sc.LOCATION,
+        "reference_time": sc.T0.isoformat(),
+        "vehicles": [
+            {"id": "V1", "description": sc.V1["description"], "aliases": []},
+            {"id": "V2", "description": sc.V2["description"], "aliases": ["OBD-7731"]},
+        ],
+        "scene": {"type": "junction", "traffic_side": "left", "roads": {"ns": "Main Rd", "ew": "5th Ave"},
+                  "lane_width_m": 3.5, "junction_center_m": [0, 0], "junction_radius_m": 3.5},
+    }, indent=2) + "\n")
+    return path
+
+
+if __name__ == "__main__":
+    print(f"wrote {write_case().relative_to(OUT.parents[1])}")

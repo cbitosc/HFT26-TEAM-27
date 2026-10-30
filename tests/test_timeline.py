@@ -5,6 +5,10 @@ from app import store
 from app.modules.timeline import build_timeline
 from app.schemas import ObservationSet, SourceType, Timeline
 
+import pytest as _pytest
+
+pytestmark = _pytest.mark.usefixtures("demo_case")  # demo data: declared vehicles, junction, clock
+
 
 @pytest.fixture
 def obs_sets():

@@ -151,12 +151,17 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
     )
   }
 
-  const { extent_m: sceneE, lane_width_m: L, roads } = data.scene
+  const { extent_m: sceneE, lane_width_m: L = 3.5, roads } = data.scene
+  // A declared junction is drawn with roads; a plain metric map shows only the evidence.
+  const junction = data.scene.type !== 'metric'
+  const [cx, cy] = data.scene.center_m ?? [0, 0]
   const R = 1.5 * sceneE // roads run past the scene edge so the auto view never shows them ending
   const current = data.vehicles.map((v) => ({ v, p: positionAt(v.track, time) }))
-  const E = zoom === 'auto'
-    ? Math.min(1.5 * sceneE, Math.max(ZOOMS.junction, ...current.map(({ p }) => Math.max(Math.abs(p.x_m), Math.abs(p.y_m)) + 8)))
-    : ZOOMS[zoom] ?? sceneE
+  const E = !junction
+    ? sceneE
+    : zoom === 'auto'
+      ? Math.min(1.5 * sceneE, Math.max(ZOOMS.junction, ...current.map(({ p }) => Math.max(Math.abs(p.x_m), Math.abs(p.y_m)) + 8)))
+      : ZOOMS[zoom] ?? sceneE
   const s = E / 60 // scale strokes and text with the view
   const fs = 2.2 * s
   const half = L // two lanes per road -> half-width = one lane width each side
@@ -184,8 +189,8 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
     <Panel title="Reconstruction Viewer"
       actions={
         <div className="flex items-center gap-2 text-xs">
-          <span className="text-slate-500">predefined intersection · metres</span>
-          <div className="flex overflow-hidden rounded border border-slate-200">
+          <span className="text-slate-500">{junction ? 'declared junction · metres' : 'metric map · metres'}</span>
+          <div className={`flex overflow-hidden rounded border border-slate-200 ${junction ? '' : 'hidden'}`}>
             {Object.keys(ZOOMS).map((z) => (
               <button key={z} onClick={() => setZoom(z)}
                 className={`px-2 py-0.5 capitalize ${zoom === z ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'}`}>{z}</button>
@@ -193,9 +198,10 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
           </div>
         </div>
       }>
-      <svg viewBox={`${-E} ${-E} ${2 * E} ${2 * E}`} className="mx-auto block aspect-square w-full max-w-xl rounded bg-lime-50">
+      <svg viewBox={`${cx - E} ${-cy - E} ${2 * E} ${2 * E}`} className="mx-auto block aspect-square w-full max-w-xl rounded bg-lime-50">
         {/* World coordinates: +y is north, so flip the y axis. */}
         <g transform="scale(1,-1)">
+          {junction && <>
           <rect x={-R} y={-half} width={2 * R} height={2 * half} fill="#cbd5e1" />
           <rect x={-half} y={-R} width={2 * half} height={2 * R} fill="#cbd5e1" />
           <line x1={-R} y1={0} x2={-half} y2={0} stroke="white" strokeWidth={0.2} strokeDasharray="2 2" />
@@ -217,6 +223,7 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
               </g>
             )
           })}
+          </>}
 
           {showCollision && (
             <g transform={`translate(${data.collision.x_m},${data.collision.y_m})`} opacity={0.85}>
@@ -256,9 +263,9 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
 
         </g>
 
-        <text x={half + 1 * s} y={-E + 4 * s} fontSize={2.5 * s} fill="#475569">{roads?.ns}</text>
-        <text x={-E + 1 * s} y={half + 3 * s} fontSize={2.5 * s} fill="#475569">{roads?.ew}</text>
-        <text x={-E + 1 * s} y={E - 2 * s} fontSize={2.5 * s} fill="#475569">N ↑</text>
+        {junction && <text x={half + 1 * s} y={-E + 4 * s} fontSize={2.5 * s} fill="#475569">{roads?.ns}</text>}
+        {junction && <text x={-E + 1 * s} y={half + 3 * s} fontSize={2.5 * s} fill="#475569">{roads?.ew}</text>}
+        <text x={cx - E + 1 * s} y={-cy + E - 2 * s} fontSize={2.5 * s} fill="#475569">N ↑</text>
         {labels.map((l) => (
           <g key={l.key}>
             <line x1={l.ax} y1={l.ay} x2={l.side === 'left' ? l.x + l.w + 0.3 * fs : l.x - 0.3 * fs} y2={l.y - l.h * 0.45}

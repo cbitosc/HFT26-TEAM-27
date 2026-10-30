@@ -122,6 +122,7 @@ def test_no_key_invalid_video_is_an_error(tmp_path, monkeypatch):
 def test_analyze_with_mock_model(video, monkeypatch):
     monkeypatch.setattr(ingestion, "SAMPLE_FPS", 5.0)
     monkeypatch.setattr(ingestion, "CAMERA_MODE", "dashcam")
+    monkeypatch.setattr(config, "CASE_VEHICLES", [{"id": "V1", "description": "red sedan", "ego": True}])
     client = FakeClient()
     out = analyze_video(_evidence(video), client=client)
     out = ObservationSet.model_validate(out.model_dump(mode="json"))  # round-trips as JSON

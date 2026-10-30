@@ -15,8 +15,9 @@ Two methods, both per camera view:
   uncalibrated, never guessed.
   Gives distance along the road (enough for speed); lateral position only via lane width.
 
-Defaults are German motorway markings (Leitlinie: 6 m dash, 12 m gap, 3.75 m lanes); override with
-LANE_DASH_M / LANE_GAP_M / LANE_WIDTH_M for other roads.
+The marking standard is a case setting (config.LANE_MARKINGS: a preset such as de_motorway or custom
+dash/gap/lane width). Without one, no automatic calibration is attempted: guessing the standard would
+silently scale every speed by the wrong factor.
 """
 from __future__ import annotations
 
@@ -28,9 +29,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-DASH_M = float(os.environ.get("LANE_DASH_M", "6"))
-GAP_M = float(os.environ.get("LANE_GAP_M", "12"))
-LANE_WIDTH_M = float(os.environ.get("LANE_WIDTH_M", "3.75"))
+def _standard() -> tuple[float, float, float] | None:
+    from app import config
+    lm = config.LANE_MARKINGS
+    return (float(lm["dash_m"]), float(lm["gap_m"]), float(lm.get("lane_width_m") or 3.5)) if lm else None
 PERIOD_TOLERANCE = 0.2   # a pair counts as one period if within 20 % of the median period
 MIN_PERIOD_SHARE = 0.6   # ... and most pairs must
 DASH_TOLERANCE = 0.45    # dash length check is loose: edges are blurred
@@ -72,7 +74,8 @@ class ViewCalibration:
         along = self.k / dy
         lateral = None
         if self.lane_px_per_row:
-            lateral = (x - self.vanishing_x) / (self.lane_px_per_row * dy) * LANE_WIDTH_M
+            lateral = (x - self.vanishing_x) / (self.lane_px_per_row * dy) * self.quality.get("assumed", {}).get(
+                "lane_width_m", 3.5)
         return lateral, along
 
     def usable(self, y: float, view_bottom: float) -> bool:
@@ -142,6 +145,11 @@ def _intersect(fits) -> np.ndarray:
 
 def auto_calibrate(background: np.ndarray, view: int, box: tuple[int, int, int, int]) -> ViewCalibration:
     """Calibrate one view from its vehicle-free background image (view-local pixels)."""
+    standard = _standard()
+    if standard is None:
+        return ViewCalibration(view, "lane_dashes", False, "no lane-marking standard declared for this case "
+                               "(set lane_markings: a preset or dash/gap lengths)")
+    DASH_M, GAP_M, LANE_WIDTH_M = standard
     x0, y0 = box[0], box[1]
     h = background.shape[0]
     blobs = _paint_blobs(background)

@@ -31,5 +31,6 @@ def detect_conflicts(observation_sets: list[ObservationSet], timeline: Timeline)
     return ConflictReport(
         incident_id=timeline.incident_id,
         generated_at=datetime.now(timezone.utc),
-        conflicts=[Conflict(id=f"cf_{i:02d}", **d) for i, d in enumerate(drafts, 1)],
+        conflicts=[Conflict(id=f"cf_{i:02d}", basis="llm" if d["details"].get("method") == "llm_semantic" else "rule", **d)
+                   for i, d in enumerate(drafts, 1)],
     )

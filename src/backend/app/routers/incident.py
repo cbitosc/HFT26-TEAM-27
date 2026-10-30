@@ -14,7 +14,15 @@ router = APIRouter(prefix="/api/incident", tags=["incident"])
 def current() -> IncidentInfo:
     return IncidentInfo(incident_id=config.INCIDENT_ID, title=config.INCIDENT_TITLE, location=config.INCIDENT_LOCATION,
                         reference_time=config.INCIDENT_REFERENCE_TIME,
-                        reference_time_confirmed=config.REFERENCE_TIME_CONFIRMED)
+                        reference_time_confirmed=config.REFERENCE_TIME_CONFIRMED,
+                        vehicles=config.CASE_VEHICLES, scene=config.CASE_SCENE or {"type": "unknown"},
+                        lane_markings=config.LANE_MARKINGS)
+
+
+@router.get("/lane-presets")
+def lane_presets() -> dict:
+    """Lane-line standards usable as `lane_markings` (verify for your road; or pass custom values)."""
+    return config.LANE_PRESETS
 
 
 @router.get("", response_model=IncidentInfo)
@@ -28,11 +36,14 @@ def update_incident(update: IncidentUpdate) -> IncidentInfo:
     if update.reference_time is not None and update.reference_time.tzinfo is None:
         raise HTTPException(422, "reference_time needs a UTC offset, e.g. 2026-10-12T17:42:00+05:30")
     changes = update.model_dump(exclude_none=True, mode="json")
-    config.apply_incident(changes)
-    saved = current().model_dump(mode="json")
+    ids = [v["id"] for v in changes.get("vehicles", [])]
+    if len(ids) != len(set(ids)):
+        raise HTTPException(422, "vehicle ids must be unique")
+    try:
+        config.apply_incident(changes)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
     config.STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-    config.incident_file().write_text(json.dumps(
-        {k: saved[k] for k in ("incident_id", "title", "location")} |
-        ({"reference_time": saved["reference_time"]} if config.REFERENCE_TIME_CONFIRMED else {}), indent=2))
+    config.incident_file().write_text(json.dumps(config.case_snapshot(), indent=2))
     store.audit("incident_updated", **changes)
     return current()

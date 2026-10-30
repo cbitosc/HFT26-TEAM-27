@@ -17,10 +17,12 @@ record (as a ``sensor_gap`` observation plus a warning).
 """
 from __future__ import annotations
 
+import math
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from app import config
@@ -35,8 +37,10 @@ TIME_COLS = {"timestamp": "iso", "time": "iso", "datetime": "iso", "ts": "iso",
 # column name -> (factor to km/h, unit label for the raw attribute)
 SPEED_COLS = {"speed_kmh": (1.0, "kmh"), "speed_kph": (1.0, "kmh"), "speed_mph": (1.609344, "mph"),
               "speed_ms": (3.6, "ms"), "speed_mps": (3.6, "ms")}
-X_COLS = ("x_m", "pos_x", "x")
-Y_COLS = ("y_m", "pos_y", "y")
+X_COLS = ("x_m", "pos_x", "x", "east_m", "easting")
+Y_COLS = ("y_m", "pos_y", "y", "north_m", "northing")
+LAT_COLS = ("lat", "latitude", "gps_lat")
+LON_COLS = ("lon", "lng", "long", "longitude", "gps_lon", "gps_lng")
 HEADING_COLS = ("heading_deg", "hdg", "heading")
 BRAKE_COLS = ("brake", "brake_pedal", "braking", "brake_on")
 VEHICLE_COLS = ("vehicle_id", "unit_id", "vehicle", "device_id")
@@ -45,14 +49,11 @@ STATE_COLS = ("state", "signal_state", "signal", "color", "colour")
 FRAME_COLS = ("source_frame_approx", "source_frame", "frame", "frame_index", "frame_no", "frame_number")
 FLOW_COL = re.compile(r"^(?P<view>.+?)_(?P<stat>mean|p95|max|median)_optical_flow")
 
-# Telemetry unit ids whose vehicle is known from the incident file.
-UNIT_TO_VEHICLE = {"OBD-7731": "V2"}
 SIGNAL_ALIASES = {"amber": "yellow", "orange": "yellow", "g": "green", "y": "yellow", "r": "red"}
 BRAKE_TRUE = {"1", "on", "true", "yes", "y", "t"}
 
 STOPPED_KMH = 0.5
 HEADING_JUMP_DEG = 10.0
-BOX_HALF_M = 3.5          # intersection box: two 3.5 m lanes each side of the centre lines
 GAP_FACTOR = 1.5          # a step longer than 1.5x the median interval is a gap
 DECEL_BRAKE_KMH_PER_S = 7.2  # 2 m/s^2: braking inferred from speed when there is no brake column
 FLOW_SPIKE_Z = 2.5        # robust z-score (median/MAD) of a view's p95 flow that counts as a motion spike
@@ -102,6 +103,9 @@ class _Builder:
         self._counters[prefix] = n
         return f"{prefix}_{n:0{width}d}"
 
+    # Read straight off the file vs computed from several rows (thresholds, differences, gaps).
+    MEASURED = {"moving", "signal_state", "stopped"}
+
     def add(self, obs_id: str, locator: str, ts: pd.Timestamp, t_rel: float, action: str, *,
             vehicle_id=None, description=None, attributes=None, confidence=1.0, uncertainty=0.0):
         self.observations.append(Observation(
@@ -116,6 +120,8 @@ class _Builder:
             action=action,
             attributes={k: v for k, v in (attributes or {}).items() if v is not None},
             confidence=confidence,
+            basis="measured" if action in self.MEASURED or (action == "braking" and (attributes or {}).get(
+                "inferred_from") == "brake") else "derived",
         ))
 
 
@@ -162,18 +168,32 @@ def _extract_signals(df: pd.DataFrame, b: _Builder) -> None:
 # ---------------------------------------------------------- vehicle tracks
 
 def _resolve_vehicle(raw: str, b: _Builder) -> tuple[str | None, str | None]:
+    """A declared vehicle (by id or alias) if the case lists one; otherwise the unit's own id."""
     raw = raw.strip()
-    if raw in UNIT_TO_VEHICLE:
-        vid = UNIT_TO_VEHICLE[raw]
-        b.warnings.append(f"{b.file}: unit_id {raw} mapped to {vid}.")
-        return vid, f"unit {raw}"
-    if re.fullmatch(r"V\d+", raw, flags=re.I):
-        return raw.upper(), None
+    for v in config.CASE_VEHICLES:
+        if raw == v["id"]:
+            return v["id"], v.get("description") or None
+        if raw in v.get("aliases", []):
+            b.warnings.append(f"{b.file}: unit '{raw}' is declared vehicle {v['id']}.")
+            return v["id"], v.get("description") or f"unit {raw}"
     if raw:
-        b.warnings.append(f"{b.file}: unknown unit '{raw}' not mapped to a vehicle; vehicle_id left null.")
-        return None, f"unit {raw}"
-    b.warnings.append(f"{b.file}: no vehicle id column; vehicle_id left null.")
-    return None, None
+        vid = re.sub(r"[^A-Za-z0-9_.-]+", "_", raw)
+        if config.CASE_VEHICLES:
+            b.warnings.append(f"{b.file}: unit '{raw}' is not a declared vehicle; kept as its own id.")
+        return vid, None
+    vid = re.sub(r"[^A-Za-z0-9]+", "_", Path(b.file).stem)
+    b.warnings.append(f"{b.file}: no vehicle id column; vehicle named '{vid}' after the file.")
+    return vid, None
+
+
+def _junction() -> tuple[float, float, float] | None:
+    """(centre x, centre y, half-size) of the junction box, only when the case declares a junction."""
+    scene = config.CASE_SCENE or {}
+    if scene.get("type") != "junction":
+        return None
+    cx, cy = scene.get("junction_center_m") or (0.0, 0.0)
+    half = scene.get("junction_radius_m") or (scene.get("lane_width_m") or 3.5)
+    return float(cx), float(cy), float(half)
 
 
 def _extract_track(track: pd.DataFrame, b: _Builder, vid: str | None, desc: str | None,
@@ -198,6 +218,7 @@ def _extract_track(track: pd.DataFrame, b: _Builder, vid: str | None, desc: str 
     dts = pd.Series(t).diff().dropna()
     median_dt = float(dts.median()) if len(dts) else 0.0
     events = []  # (t, sort_key, callable) so ids are numbered in time order
+    junction = _junction()
 
     # Motion summary on the first sample.
     first_action = "stopped" if spd[0] <= STOPPED_KMH else "moving"
@@ -237,9 +258,10 @@ def _extract_track(track: pd.DataFrame, b: _Builder, vid: str | None, desc: str 
                             "inferred_from": "brake" if brake is not None else "deceleration"},
                 confidence=0.97 if brake is not None else 0.8, uncertainty=dt)))
 
-        if None not in (xs[i], ys[i], xs[i - 1], ys[i - 1]):
-            inside = abs(xs[i]) <= BOX_HALF_M and abs(ys[i]) <= BOX_HALF_M
-            was_inside = abs(xs[i - 1]) <= BOX_HALF_M and abs(ys[i - 1]) <= BOX_HALF_M
+        if junction and None not in (xs[i], ys[i], xs[i - 1], ys[i - 1]):
+            jx, jy, half = junction
+            inside = abs(xs[i] - jx) <= half and abs(ys[i] - jy) <= half
+            was_inside = abs(xs[i - 1] - jx) <= half and abs(ys[i - 1] - jy) <= half
             if inside and not was_inside:
                 events.append((t[i], 3, lambda i=i, dt=dt: b.add(
                     b.next_id(prefix), _row_locator(row[i]), ts[i], t[i], "entering_intersection",
@@ -335,34 +357,81 @@ def _describe_frame_index(df: pd.DataFrame, b: _Builder, fcol: str) -> None:
                       f"contains no vehicle measurements, so it yields no observations.")
 
 
+EARTH_R = 6_371_000.0
+
+
+def latlon_to_m(lat: float, lon: float, origin: tuple[float, float]) -> tuple[float, float]:
+    """Local east/north metres from an origin (equirectangular; fine over a few km)."""
+    lat0, lon0 = origin
+    x = math.radians(lon - lon0) * EARTH_R * math.cos(math.radians(lat0))
+    y = math.radians(lat - lat0) * EARTH_R
+    return x, y
+
+
 def _extract_tracks(df: pd.DataFrame, b: _Builder) -> None:
     cols = list(df.columns)
     scol = _pick(cols, SPEED_COLS)
-    factor, unit = SPEED_COLS[scol]
+    factor, unit = SPEED_COLS[scol] if scol else (1.0, "kmh")
     picked = {"x": _pick(cols, X_COLS), "y": _pick(cols, Y_COLS), "hdg": _pick(cols, HEADING_COLS),
               "brake": _pick(cols, BRAKE_COLS)}
+    lat, lon = _pick(cols, LAT_COLS), _pick(cols, LON_COLS)
     df = _with_time(df, b)
-    df["_speed_raw"] = pd.to_numeric(df[scol], errors="coerce")
-    df["_speed"] = df["_speed_raw"] * factor
-    bad = df["_speed"].isna()
-    if bad.any():
-        b.warnings.append(f"{b.file}: {int(bad.sum())} row(s) with unreadable '{scol}' skipped.")
-        df = df.loc[~bad]
     for key, out in (("x", "_x"), ("y", "_y"), ("hdg", "_hdg")):
         if picked[key]:
             df[out] = pd.to_numeric(df[picked[key]], errors="coerce")
+    if not (picked["x"] and picked["y"]) and lat and lon:
+        la, lo = pd.to_numeric(df[lat], errors="coerce"), pd.to_numeric(df[lon], errors="coerce")
+        origin = config.GPS_ORIGIN or (float(la.min()), float(lo.min()))
+        xy = [latlon_to_m(a, o, origin) if pd.notna(a) and pd.notna(o) else (np.nan, np.nan) for a, o in zip(la, lo)]
+        df["_x"], df["_y"] = [p[0] for p in xy], [p[1] for p in xy]
+        picked["x"] = picked["y"] = "gps"
+        b.warnings.append(f"{b.file}: GPS converted to local metres (east, north) from origin "
+                          f"{origin[0]:.6f}, {origin[1]:.6f}.")
+    if scol:
+        df["_speed_raw"] = pd.to_numeric(df[scol], errors="coerce")
+        df["_speed"] = df["_speed_raw"] * factor
+        bad = df["_speed"].isna()
+        if bad.any():
+            b.warnings.append(f"{b.file}: {int(bad.sum())} row(s) with unreadable '{scol}' skipped.")
+            df = df.loc[~bad]
+        if unit != "kmh":
+            b.warnings.append(f"{b.file}: speed converted from {unit} to km/h (raw value kept as speed_{unit}_raw).")
     if picked["brake"]:
         df["_brake"] = df[picked["brake"]].str.strip().str.lower().isin(BRAKE_TRUE)
-    if unit != "kmh":
-        b.warnings.append(f"{b.file}: speed converted from {unit} to km/h (raw value kept as speed_{unit}_raw).")
 
     vcol = _pick(cols, VEHICLE_COLS)
     groups = df.groupby(df[vcol].str.strip(), sort=False) if vcol else [("", df)]
     for raw_id, track in groups:
         if len(track) == 0:
             continue
+        track = track.reset_index(drop=True)
+        if not scol or not picked["hdg"]:
+            _motion_from_positions(track, b, need_speed=not scol, need_heading=not picked["hdg"], picked=picked)
+            if "_speed" not in track:
+                continue
         vid, desc = _resolve_vehicle(str(raw_id), b)
         _extract_track(track, b, vid, desc, unit, picked)
+
+
+def _motion_from_positions(track: pd.DataFrame, b: _Builder, need_speed: bool, need_heading: bool, picked: dict) -> None:
+    """Speed (km/h) and heading (deg from north, clockwise) from successive positions when not recorded."""
+    if "_x" not in track or "_y" not in track:
+        if need_speed:
+            b.warnings.append(f"{b.file}: no speed column and no positions; track skipped.")
+        return
+    t = track["_t"]
+    vx = (track["_x"].shift(-1) - track["_x"].shift(1)) / (t.shift(-1) - t.shift(1))
+    vy = (track["_y"].shift(-1) - track["_y"].shift(1)) / (t.shift(-1) - t.shift(1))
+    vx = vx.fillna(track["_x"].diff() / t.diff()).bfill().ffill()
+    vy = vy.fillna(track["_y"].diff() / t.diff()).bfill().ffill()
+    if need_speed:
+        track["_speed"] = (np.hypot(vx, vy) * 3.6).astype(float)
+        track["_speed_raw"] = track["_speed"]
+        b.warnings.append(f"{b.file}: no speed column; speed computed from positions.")
+    if need_heading:
+        moving = np.hypot(vx, vy) > 0.5
+        track["_hdg"] = pd.Series(np.where(moving, (np.degrees(np.arctan2(vx, vy)) + 360) % 360, np.nan)).ffill().bfill()
+        picked["hdg"] = "computed"
 
 
 LAYOUTS = {"signal_log": "traffic-signal log", "vehicle_track": "vehicle track (telemetry/OBD)",
@@ -375,7 +444,8 @@ def classify_columns(cols: list[str]) -> str | None:
         return None
     if _pick(cols, APPROACH_COLS) and _pick(cols, STATE_COLS):
         return "signal_log"
-    if _pick(cols, SPEED_COLS):
+    has_xy = (_pick(cols, X_COLS) and _pick(cols, Y_COLS)) or (_pick(cols, LAT_COLS) and _pick(cols, LON_COLS))
+    if _pick(cols, SPEED_COLS) or has_xy:
         return "vehicle_track"
     if _flow_columns(cols):
         return "optical_flow"
@@ -422,3 +492,34 @@ def extract_sensor(evidence: Evidence) -> ObservationSet:
     return ObservationSet(source_type=SourceType.sensor, evidence_id=evidence.id, producer=PRODUCER,
                           generated_at=datetime.now(timezone.utc), observations=b.observations,
                           warnings=b.warnings)
+
+
+def scan_csv(path: str) -> dict:
+    """Cheap pre-pass for the pipeline: earliest absolute timestamp and smallest lat/lon, if any."""
+    try:
+        df = pd.read_csv(path, dtype=str, skipinitialspace=True, keep_default_na=False)
+    except Exception:
+        return {}
+    df.columns = [str(c).strip().lower() for c in df.columns]
+    cols = list(df.columns)
+    out: dict = {}
+    tcol = _pick(cols, TIME_COLS)
+    if tcol and TIME_COLS[tcol] != "rel":
+        kind = TIME_COLS[tcol]
+        if kind == "iso":
+            ts = pd.to_datetime(df[tcol], format="ISO8601", utc=True, errors="coerce")
+        else:
+            ts = pd.to_datetime(pd.to_numeric(df[tcol], errors="coerce"), unit="ms" if kind == "ms" else "s",
+                                utc=True, errors="coerce")
+        ts = ts.dropna()
+        if len(ts):
+            # keep the file's own offset when it has one, so the report shows local clock time
+            first = df[tcol][ts.index[ts.argmin()]]
+            parsed = pd.Timestamp(first) if kind == "iso" else ts.min()
+            out["earliest"] = (parsed if parsed.tzinfo else parsed.tz_localize("UTC")).to_pydatetime()
+    lat, lon = _pick(cols, LAT_COLS), _pick(cols, LON_COLS)
+    if lat and lon:
+        la, lo = pd.to_numeric(df[lat], errors="coerce").dropna(), pd.to_numeric(df[lon], errors="coerce").dropna()
+        if len(la) and len(lo):
+            out["latlon"] = (float(la.min()), float(lo.min()))
+    return out

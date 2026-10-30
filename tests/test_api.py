@@ -4,6 +4,10 @@ from fastapi.testclient import TestClient
 from app import config
 from app.main import app
 
+import pytest as _pytest
+
+pytestmark = _pytest.mark.usefixtures("demo_case")  # demo data: declared vehicles, junction, clock
+
 client = TestClient(app)
 
 

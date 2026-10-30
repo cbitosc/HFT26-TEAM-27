@@ -59,6 +59,8 @@ def infer_collisions(observations: list[Observation]) -> list[Observation]:
         time_uncertainty_s=round(step, 3),
         vehicle_id=None,
         action="collision",
+        basis="derived",
+        derived_from=[a.id, b.id],
         attributes={"vehicles": sorted({a.vehicle_id, b.vehicle_id}), "inferred_from": [a.id, b.id],
                     "rule": f"sudden heading changes of two vehicles within {PAIR_WINDOW_S:g} s and "
                             f"{PAIR_DISTANCE_M:g} m", "separation_m": round(dist, 2),
