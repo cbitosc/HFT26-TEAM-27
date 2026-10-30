@@ -52,15 +52,20 @@ def reconstruct_from_camera(observation_sets: list[ObservationSet], timeline: Ti
     vehicles: list[VehicleTrack] = []
     for o in tracks:
         pts = o.attributes["points"]
+        speeds = {round(t, 3): s for t, s in o.attributes.get("speed_points", [])}
         track = []
         for k, (t, x, y) in enumerate(pts):
             a, b = pts[max(0, k - 1)], pts[min(len(pts) - 1, k + 1)]
-            track.append(TrackPoint(t_s=t, x_m=x, y_m=y, heading_deg=_heading(b[1] - a[1], b[2] - a[2])))
+            track.append(TrackPoint(t_s=t, x_m=x, y_m=y, heading_deg=_heading(b[1] - a[1], b[2] - a[2]),
+                                    speed_kmh=speeds.get(round(t, 3))))
         view = o.attributes["view"]
+        mean = o.attributes.get("mean_speed_kmh")
+        speed = f"~{mean:g} km/h ({o.attributes.get('calibration', '').replace('_', ' ')} calibration)" if mean else \
+            f"~{o.attributes.get('mean_speed_px_s', '?')} px/s (view not calibrated)"
         vehicles.append(VehicleTrack(
             vehicle_id=o.attributes["track_id"], label=f"{o.attributes['track_id']} · view {view}",
             color=VIEW_COLORS[(view - 1) % len(VIEW_COLORS)],
-            description=f"moving, {o.attributes.get('direction', '')}, ~{o.attributes.get('mean_speed_px_s', '?')} px/s",
+            description=f"moving, {o.attributes.get('direction', '')}, {speed}",
             track=track, source_observation_ids=[o.id]))
 
     for n, o in enumerate(stopped, start=1):

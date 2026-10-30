@@ -269,7 +269,7 @@ class Track:
 
 
 def track_vehicles(path: str, info: VideoInfo, views: list[tuple[int, int, int, int]],
-                   warmup_s: float = 2.0) -> list[Track]:
+                   warmup_s: float = 2.0, backgrounds: dict[int, np.ndarray] | None = None) -> list[Track]:
     """Moving-vehicle tracks per camera view: background subtraction + constant-velocity matching.
 
     Only for fixed cameras. Stationary vehicles fade into the background model and are not tracked
@@ -330,6 +330,10 @@ def track_vehicles(path: str, info: VideoInfo, views: list[tuple[int, int, int, 
             i += 1
     finally:
         cap.release()
+    if backgrounds is not None:  # vehicle-free road per view, for lane-marking calibration
+        for v, sub in enumerate(subs):
+            if (bg := sub.getBackgroundImage()) is not None:
+                backgrounds[v + 1] = bg
 
     out: list[Track] = []
     for tr in tracks:

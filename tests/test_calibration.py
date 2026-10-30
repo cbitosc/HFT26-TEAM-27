@@ -1,0 +1,84 @@
+"""Camera calibration: lane-dash auto calibration on a synthetic road with a known camera, manual
+homography, speeds, and the calibration API."""
+from datetime import datetime, timezone
+
+import cv2
+import numpy as np
+from fastapi.testclient import TestClient
+
+from app.main import app
+from app.modules.ingestion import calibration as cal
+
+F, CAM_H, CX, YH, W, H = 400.0, 6.0, 240.0, 60.0, 480, 300   # level pinhole camera: K = F * CAM_H = 2400
+
+
+def project(x_m, z_m):
+    return CX + F * x_m / z_m, YH + F * CAM_H / z_m
+
+
+def synthetic_road() -> np.ndarray:
+    """Grey road with four dashed lane lines (6 m dash, 12 m gap, 3.75 m lanes) seen by the camera above."""
+    img = np.full((H, W, 3), 95, np.uint8)
+    for lane_x in (-5.625, -1.875, 1.875, 5.625):
+        for z in np.arange(14.0, 160.0, 18.0):
+            quad = [project(lane_x - 0.12, z), project(lane_x + 0.12, z),
+                    project(lane_x + 0.12, z + 6), project(lane_x - 0.12, z + 6)]
+            cv2.fillPoly(img, [np.int32(np.round(quad))], (235, 235, 235), lineType=cv2.LINE_AA)
+    return img
+
+
+def test_auto_calibration_recovers_the_camera():
+    c = cal.auto_calibrate(synthetic_road(), view=1, box=(0, 0, W, H))
+    assert c.ok, c.reason
+    assert abs(c.horizon_y - YH) < 4
+    assert abs(c.k - F * CAM_H) / (F * CAM_H) < 0.1
+
+
+def test_speed_of_a_vehicle_at_108_kmh():
+    c = cal.auto_calibrate(synthetic_road(), view=1, box=(0, 0, W, H))
+    pts = [[t, *project(-2.8, 40 - 30 * t)] for t in np.arange(0, 1.01, 0.1)]  # 30 m/s towards the camera
+    _, per_point, mean = cal.track_speeds(c, pts, view_bottom=H)
+    assert abs(mean - 108) / 108 < 0.12, mean
+    assert per_point
+
+
+def test_flat_image_is_not_calibrated():
+    c = cal.auto_calibrate(np.full((H, W, 3), 95, np.uint8), view=2, box=(0, 0, W, H))
+    assert not c.ok and "need" in c.reason and c.ground(100, 200) is None
+
+
+def test_manual_homography():
+    ground = [[0, 0], [3.75, 0], [3.75, 30], [0, 30], [1.875, 15]]
+    image = [list(project(x - 1.875, z + 15)) for x, z in ground]
+    c = cal.manual_calibration(3, image, ground)
+    assert c.ok and c.reprojection_m < 0.05
+    gx, gy = c.ground(*project(0.0, 25.0))  # (lateral 0 = x 1.875 in the ground frame, along 10)
+    assert abs(gx - 1.875) < 0.05 and abs(gy - 10.0) < 0.05
+    for bad in ([[0, 0], [1, 1], [2, 2], [3, 3]],):  # collinear
+        try:
+            cal.manual_calibration(3, bad, ground[:4])
+            raise AssertionError("collinear points accepted")
+        except ValueError:
+            pass
+
+
+def test_calibration_api(tmp_path):
+    client = TestClient(app)
+    path = tmp_path / "clip.avi"
+    w = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"MJPG"), 10, (W, H))
+    for _ in range(12):
+        w.write(synthetic_road())
+    w.release()
+    ev = client.post("/api/evidence", files={"file": ("clip.avi", path.read_bytes(), "video/x-msvideo")}).json()
+    base = f"/api/evidence/{ev['id']}/calibration"
+    assert client.get(base).json() == {"manual": {}, "auto": {}}
+    body = {"image_points": [list(project(x, z)) for x, z in [(-3.75, 20), (3.75, 20), (3.75, 50), (-3.75, 50)]],
+            "ground_points": [[-3.75, 20], [3.75, 20], [3.75, 50], [-3.75, 50]], "note": "lane corners from map"}
+    r = client.put(f"{base}/1", json=body)
+    assert r.status_code == 200 and r.json()["method"] == "manual" and r.json()["note"] == "lane corners from map"
+    assert client.put(f"{base}/1", json={**body, "image_points": body["image_points"][:3]}).status_code == 422
+    assert "1" in client.get(base).json()["manual"]
+    assert client.delete(f"{base}/1").status_code == 204
+    assert client.delete(f"{base}/1").status_code == 404
+    events = [e["event"] for e in client.get("/api/audit").json()]
+    assert "calibration_set" in events and "calibration_removed" in events

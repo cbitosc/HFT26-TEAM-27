@@ -206,8 +206,22 @@ def build_report(run_id: str | None = None, narrative: bool = True) -> IncidentR
             per_view[v.vehicle_id[1:].split("-")[0]] = per_view.get(v.vehicle_id[1:].split("-")[0], 0) + 1
         md.append(f"{len(moving)} moving-vehicle trajectories tracked on the camera image over "
                   f"t={recon.t_min_s:g}–{recon.t_max_s:g} s ("
-                  + ", ".join(f"view {k}: {n}" for k, n in sorted(per_view.items())) + "), in image pixels "
-                  "(no camera calibration, so no metric positions or speeds).")
+                  + ", ".join(f"view {k}: {n}" for k, n in sorted(per_view.items())) + ").")
+        track_obs = [o for o in by_id.values() if o.action == "track"]
+        md += ["", "| View | Tracks | Calibration | Speed km/h (10th / median / 90th pct) |", "|---|---|---|---|"]
+        notes = {int(m.group(1)): w for s in sets for w in s.warnings
+                 if (m := re.match(r"Camera view (\d+) (?:calibrated|not calibrated)", w))}
+        for view in sorted(int(k) for k in per_view):
+            speeds = sorted(o.attributes["mean_speed_kmh"] for o in track_obs
+                            if o.attributes.get("view") == view and o.attributes.get("mean_speed_kmh") is not None)
+            cal = notes.get(view, "—").split(": ", 1)[-1].rstrip(".")
+            if speeds:
+                q = lambda f: speeds[min(len(speeds) - 1, int(f * len(speeds)))]  # noqa: E731
+                stat = f"{q(0.1):.0f} / {q(0.5):.0f} / {q(0.9):.0f} (n={len(speeds)})"
+            else:
+                stat = "—"
+            md.append(f"| {view} | {per_view[str(view)]} | {cal} | {stat} |")
+        md.append("")
         for v in still:
             md.append(f"- Stationary: {v.label}, t={v.track[0].t_s:g}–{v.track[-1].t_s:g} s, at pixel "
                       f"({v.track[0].x_m:g}, {v.track[0].y_m:g}) — {', '.join(_cite(by_id.get(i)) for i in v.source_observation_ids)}")

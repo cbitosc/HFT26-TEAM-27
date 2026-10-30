@@ -11,8 +11,10 @@ from fastapi import APIRouter, HTTPException, Response, UploadFile
 
 from app import config, store
 from app.modules.extraction.sensor import inspect_csv
+from app.modules.ingestion import calibration
+from app.modules.ingestion import calibration_key
 from app.modules.ingestion.video import VideoError, probe_video
-from app.schemas import Evidence, SourceType
+from app.schemas import CalibrationPoints, Evidence, SourceType
 
 MAX_TEXT_CHARS = 200_000
 
@@ -130,3 +132,43 @@ def video_frame(evidence_id: str, index: int, width: int = 480) -> Response:
         image = cv2.resize(image, (width, round(h * width / w)), interpolation=cv2.INTER_AREA)
     ok, buf = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 80])
     return Response(buf.tobytes(), media_type="image/jpeg", headers={"Cache-Control": "max-age=3600"})
+
+
+def _video(evidence_id: str) -> Evidence:
+    ev = next((e for e in store.list_evidence() if e.id == evidence_id), None)
+    if ev is None or ev.kind != SourceType.video:
+        raise HTTPException(404, "Video evidence not found")
+    return ev
+
+
+@router.get("/{evidence_id}/calibration")
+def get_calibration(evidence_id: str) -> dict:
+    """Per camera view: the manual calibration (if set) and the automatic one from the last run."""
+    return calibration.load(calibration_key(_video(evidence_id)))
+
+
+@router.put("/{evidence_id}/calibration/{view}")
+def set_calibration(evidence_id: str, view: int, body: CalibrationPoints) -> dict:
+    """Manual calibration of one view (overrides the automatic one). Re-run the analysis to apply it."""
+    ev = _video(evidence_id)
+    try:
+        cal = calibration.manual_calibration(view, [list(p) for p in body.image_points],
+                                             [list(p) for p in body.ground_points])
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    data = calibration.load(calibration_key(ev))
+    data.setdefault("manual", {})[str(view)] = cal.to_dict() | {"note": body.note}
+    calibration.save(calibration_key(ev), data)
+    store.audit("calibration_set", id=evidence_id, filename=ev.filename, sha256=ev.sha256, view=view,
+                points=len(body.image_points), reprojection_m=cal.reprojection_m, note=body.note)
+    return data["manual"][str(view)]
+
+
+@router.delete("/{evidence_id}/calibration/{view}", status_code=204)
+def delete_calibration(evidence_id: str, view: int) -> None:
+    ev = _video(evidence_id)
+    data = calibration.load(calibration_key(ev))
+    if data.get("manual", {}).pop(str(view), None) is None:
+        raise HTTPException(404, "No manual calibration for this view")
+    calibration.save(calibration_key(ev), data)
+    store.audit("calibration_removed", id=evidence_id, filename=ev.filename, sha256=ev.sha256, view=view)

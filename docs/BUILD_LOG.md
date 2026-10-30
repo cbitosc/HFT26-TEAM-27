@@ -413,3 +413,25 @@ Headline, evidence table with hashes, timeline (t and clock), contradictions wit
 **Limits:** pixels, not metres (that needs a calibration per camera view, e.g. 4 known road points). Coverage is partial: dense or merged traffic and very near vehicles are dropped by the quality filter rather than tracked wrongly. Stopped vehicles are invisible to motion tracking and come only from the vision model's verified findings.
 
 `pytest` **110 passed**; frontend build OK.
+
+## 2026-10-31 · Camera calibration: metres and km/h for fixed-camera tracks
+
+**Result on the example clip:** view 2 calibrates automatically (3 lane lines with 100 % consistent marking periods; their dashes independently measure 5.75 / 5.99 / 5.72 m against the standard 6 m). Track speeds there are **102 / 122 / 151 km/h** (10th / median / 90th percentile, n=26), plausible for a German motorway, and shown on the cars in the replay. Views 1 and 3 have no consistent markings and view 4's two candidate lines disagree by 41 %, so those three are **reported uncalibrated, not guessed**, with the API call to calibrate them manually.
+
+| File | Change |
+| --- | --- |
+| `modules/ingestion/calibration.py` (new) | **lane_dashes** (automatic): lane markings are a ruler (default German motorway 6 m dash + 12 m gap, 3.75 m lane; `LANE_DASH_M/GAP_M/WIDTH_M`). On the vehicle-free background of each view: paint blobs → dashed lane lines (RANSAC) → vanishing point supported by the most lines → horizon y_h. Along-road distance Z = A + K/(y − y_h); speed needs only K, from the **marking period** (near end to near end = 18 m), median over pairs. Each line is validated (≥60 % of periods consistent, dash length within 45 %); a view needs ≥2 agreeing lines (scale spread ≤20 %). Lateral metres from the lane width. **manual**: homography from ≥4 image↔ground points (`cv2.findHomography`), reprojection error reported, collinear points rejected. `track_speeds`: ground points, per-point speed (±0.5 s window) and mean speed (regression), using only near-field rows for the automatic method |
+| `modules/ingestion/video.py` | `track_vehicles(..., backgrounds=)` returns each view's background model (vehicle-free road) |
+| `modules/ingestion/__init__.py` | `calibrate_views`: per view, a saved manual calibration wins, else automatic. Results are saved per evidence file (`storage/calibration/<sha256>.json`). Tracks gain `calibration`, `mean_speed_kmh`, `speed_points`, `ground_points`. One warning per view says calibrated (why) or not (why, and how to fix) |
+| `routers/evidence.py` | `GET /api/evidence/{id}/calibration`, `PUT`/`DELETE …/calibration/{view}` (manual points, 422 on bad input, audited as `calibration_set` / `calibration_removed`) |
+| `modules/reconstruction/camera.py` | `TrackPoint.speed_kmh` per point; descriptions say km/h and which calibration, or px/s when uncalibrated |
+| `report.py` | Reconstruction table per view: tracks, calibration status/reason, speed percentiles |
+| `CameraTrajectories.jsx` | Live speed label next to each tracked vehicle when its view is calibrated |
+| `schemas.py` | `CalibrationPoints` (request body); JSON schemas re-exported |
+| `tests/test_calibration.py` (new) | **Synthetic road from a known pinhole camera** (f=400 px, height 6 m → K=2400): auto calibration recovers K within 10 % and the horizon within 4 px; a vehicle at 30 m/s measures 108 km/h within 12 %; a flat image is refused; a manual homography reprojects within 5 cm; the API round trip |
+
+**Found by the synthetic test:** the first version took K from each dash's own length. Blur and anti-aliasing make dashes look longer, so K came out 16 % low (2022 vs 2400). The period (same edge to same edge) cancels that bias: 2448 vs 2400 (+2 %). On the real clip the old method happened to pass its own gap check, so only the known-camera test exposed it.
+
+**Limits:** the automatic method assumes a level camera (no roll) and standard markings; speeds use distance along the road. Uncalibrated views need 4 measured points (e.g. lane-marking corners read off a map or a site survey).
+
+`pytest` **115 passed**; frontend build OK.

@@ -54,6 +54,8 @@ upload ──► Evidence ──► [1] analyze_video    ─┐
 | POST | `/api/analysis/jobs` | Starts a background run (or returns the running one) → `AnalysisJob` (202) |
 | GET | `/api/analysis/jobs/current` | Latest `AnalysisJob` with live per-stage progress (`pending \| running` + `done/total`), or `null` |
 | GET | `/api/evidence/{id}/frames/{index}?width=480` | One frame of an uploaded video as JPEG (thumbnails for `frame:<n>` refs) |
+| GET | `/api/evidence/{id}/calibration` | Per camera view: `manual` and `auto` (lane-dash) calibrations, with the reason a view is or isn't calibrated |
+| PUT / DELETE | `/api/evidence/{id}/calibration/{view}` | Manual calibration `{image_points: [[x_px, y_px] ×≥4], ground_points: [[X_m, Y_m] ×≥4], note}` → homography (422 if collinear or fewer than 4 points). Overrides the automatic one on the next run; audited |
 | GET / PUT | `/api/incident` | Case details `IncidentInfo`: id, title, location, **reference time** (t = 0). Re-run after changing it |
 | GET | `/api/report?format=json\|markdown&narrative=true` | `IncidentReport` of the latest run (Markdown document with citations; AI summary only with a key) |
 | GET | `/api/runs` | Every kept run (last 50), newest first, each with its evidence manifest (sha256) and stage timings |

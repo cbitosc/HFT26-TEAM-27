@@ -242,6 +242,13 @@ class IncidentUpdate(BaseModel):
     reference_time: datetime | None = Field(None, description="ISO 8601 with a UTC offset")
 
 
+class CalibrationPoints(BaseModel):
+    """Manual calibration of one camera view: >= 4 full-frame pixel points and their ground positions."""
+    image_points: list[tuple[float, float]] = Field(min_length=4, description="[x_px, y_px] in the full video frame")
+    ground_points: list[tuple[float, float]] = Field(min_length=4, description="[X_m, Y_m] on the road, same order")
+    note: str = Field("", max_length=300, description="Where the ground positions came from")
+
+
 class AuditEvent(BaseModel):
     """One line of the append-only audit log (storage/audit.jsonl)."""
     at: datetime

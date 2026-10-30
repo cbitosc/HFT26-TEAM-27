@@ -8,10 +8,11 @@ function at(track, t) {
     const b = track[i]
     if (t <= b.t_s) {
       const k = b.t_s === a.t_s ? 0 : (t - a.t_s) / (b.t_s - a.t_s)
-      return { x: a.x_m + (b.x_m - a.x_m) * k, y: a.y_m + (b.y_m - a.y_m) * k }
+      const speed = a.speed_kmh != null && b.speed_kmh != null ? a.speed_kmh + (b.speed_kmh - a.speed_kmh) * k : null
+      return { x: a.x_m + (b.x_m - a.x_m) * k, y: a.y_m + (b.y_m - a.y_m) * k, speed }
     }
   }
-  return { x: track[track.length - 1].x_m, y: track[track.length - 1].y_m }
+  return { x: track[track.length - 1].x_m, y: track[track.length - 1].y_m, speed: track[track.length - 1].speed_kmh }
 }
 
 // Fixed-camera reconstruction: tracks drawn on the actual video frame, in image pixels.
@@ -85,8 +86,12 @@ export default function CameraTrajectories({ data, time, onTimeChange, Panel }) 
             return isStop
               ? <rect key={v.vehicle_id} x={p.x - r * 1.6} y={p.y - r * 1.6} width={r * 3.2} height={r * 3.2}
                   fill="none" stroke={v.color} strokeWidth={r / 2}><title>{v.label}</title></rect>
-              : <circle key={v.vehicle_id} cx={p.x} cy={p.y} r={r} fill={v.color} stroke="white" strokeWidth={r / 4}>
-                  <title>{v.label}</title></circle>
+              : <g key={v.vehicle_id}>
+                  <circle cx={p.x} cy={p.y} r={r} fill={v.color} stroke="white" strokeWidth={r / 4}>
+                    <title>{`${v.label}: ${v.description}`}</title></circle>
+                  {p.speed != null && <text x={p.x + r * 1.4} y={p.y - r} fontSize={r * 2.6} fontWeight="700" fill="white"
+                    stroke="black" strokeWidth={r / 3} paintOrder="stroke">{Math.round(p.speed)} km/h</text>}
+                </g>
           })}
         </svg>
       </div>
@@ -105,7 +110,11 @@ export default function CameraTrajectories({ data, time, onTimeChange, Panel }) 
         <label className="flex items-center gap-1">
           <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> full paths
         </label>
-        <span className="text-slate-400">image pixels (no camera calibration)</span>
+        <span className="text-slate-400">
+          {data.vehicles.some((v) => v.track.some((p) => p.speed_kmh != null))
+            ? 'speeds from lane-marking calibration where a view is calibrated'
+            : 'image pixels (no view calibrated)'}
+        </span>
       </div>
     </Panel>
   )

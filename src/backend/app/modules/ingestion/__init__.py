@@ -35,6 +35,7 @@ from app.schemas import Evidence, Observation, ObservationSet, SourceRef, Source
 from .video import (MOVING_CAMERA_SHARE, Frame, Track, VideoInfo, camera_motion_share, detect_grid,
                     encode_jpeg_b64, extract_frames, probe_video, select_keyframes, static_regions, track_vehicles,
                     with_followers)
+from . import calibration
 from .vision import PROMPTS, CameraMode, FrameAnalysis, VisionClient, VisionError
 
 # Ungated on Featherless; google/gemma-3-27b-it is gated (needs HuggingFace OAuth, else 403).
@@ -130,10 +131,19 @@ def analyze_video(evidence: Evidence, client: VisionClient | None = None,
     if mode == "fixed" and TRACKING and frames:
         report(0, 0, "tracking vehicles")
         views = detect_grid(frames[0].image)
-        tracks = track_vehicles(evidence.stored_path, info, views)
-        track_obs = tracks_to_observations(evidence, info, tracks, views)
+        backgrounds: dict = {}
+        tracks = track_vehicles(evidence.stored_path, info, views, backgrounds=backgrounds)
+        report(0, 0, "calibrating cameras")
+        cals = calibrate_views(evidence, views, backgrounds)
+        track_obs = tracks_to_observations(evidence, info, tracks, views, cals)
         warnings.append(f"{len(track_obs)} vehicle track(s) from motion in {len(views)} camera view(s) "
-                        "(pixel coordinates; stationary vehicles are not tracked by motion).")
+                        "(stationary vehicles are not tracked by motion).")
+        for v, cal in sorted(cals.items()):
+            if cal.ok:
+                warnings.append(f"Camera view {v} calibrated ({cal.method.replace('_', ' ')}): {cal.reason}.")
+            else:
+                warnings.append(f"Camera view {v} not calibrated: {cal.reason}. Speeds unavailable; set a manual "
+                                f"calibration with PUT /api/evidence/{evidence.id}/calibration/{v}.")
 
     if client is None:
         if not config.FEATHERLESS_API_KEY:
@@ -212,14 +222,47 @@ def analyze_video(evidence: Evidence, client: VisionClient | None = None,
     )
 
 
+def calibration_key(evidence: Evidence) -> str:
+    return evidence.sha256 or evidence.id
+
+
+def calibrate_views(evidence: Evidence, views: list[tuple[int, int, int, int]],
+                    backgrounds: dict) -> dict[int, "calibration.ViewCalibration"]:
+    """Per view: the saved manual calibration if any, else the automatic lane-dash one (saved for the API)."""
+    saved = calibration.load(calibration_key(evidence))
+    out, auto = {}, {}
+    for v, box in enumerate(views, start=1):
+        if (m := saved.get("manual", {}).get(str(v))) is not None:
+            out[v] = calibration.from_dict(m)
+            continue
+        bg = backgrounds.get(v)
+        cal = (calibration.auto_calibrate(bg, v, box) if bg is not None
+               else calibration.ViewCalibration(v, "lane_dashes", False, "no background image"))
+        out[v] = cal
+        auto[str(v)] = cal.to_dict()
+    saved["auto"] = auto
+    calibration.save(calibration_key(evidence), saved)
+    return out
+
+
 def tracks_to_observations(evidence: Evidence, info: VideoInfo, tracks: list[Track],
-                           views: list[tuple[int, int, int, int]]) -> list[Observation]:
-    """One compact observation per track (action "track"): all its points ride in attributes.points."""
+                           views: list[tuple[int, int, int, int]],
+                           cals: dict | None = None) -> list[Observation]:
+    """One compact observation per track (action "track"): all its points ride in attributes.points.
+    Calibrated views add ground_points [[t, X_m, Y_m]], speed_points [[t, km/h]] and mean_speed_kmh."""
     longest = sorted(tracks, key=lambda tr: tr.points[-1][0] - tr.points[0][0], reverse=True)[:MAX_TRACKS]
     out = []
     for n, tr in enumerate(sorted(longest, key=lambda tr: (tr.points[0][0], tr.view)), start=1):
         (t0, x0, y0), (t1, x1, y1) = tr.points[0], tr.points[-1]
         dist = sum(math.hypot(b[1] - a[1], b[2] - a[2]) for a, b in zip(tr.points, tr.points[1:]))
+        metric = {}
+        cal = (cals or {}).get(tr.view)
+        if cal is not None and cal.ok:
+            ground, speeds, mean = calibration.track_speeds(cal, [list(p) for p in tr.points], views[tr.view - 1][3])
+            if mean is not None:
+                metric = {"calibration": cal.method, "mean_speed_kmh": mean,
+                          "speed_points": [[round(t + T0_OFFSET_S, 3), s] for t, s in speeds.items()],
+                          "ground_points": [[round(g[0] + T0_OFFSET_S, 3), g[1], g[2]] for g in ground]}
         out.append(Observation(
             id=f"vid_{evidence.id}_trk_{n:03d}",
             source_type=SourceType.video,
@@ -236,7 +279,7 @@ def tracks_to_observations(evidence: Evidence, info: VideoInfo, tracks: list[Tra
                         "view_box": list(views[tr.view - 1]), "grid": [list(v) for v in views],
                         "direction": "towards camera" if y1 > y0 else "away from camera",
                         "mean_speed_px_s": round(dist / max(t1 - t0, 1e-6), 1),
-                        "points": [[round(t + T0_OFFSET_S, 3), x, y] for t, x, y in tr.points]},
+                        "points": [[round(t + T0_OFFSET_S, 3), x, y] for t, x, y in tr.points], **metric},
             confidence=0.6,
         ))
     return out
