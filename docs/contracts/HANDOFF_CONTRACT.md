@@ -14,8 +14,8 @@ the stage turns **real** and nothing else has to change.
 | 2c | Fusion | `src/backend/app/modules/fusion/` | `fuse(observation_sets) -> ObservationSet \| None` | — | Infers events that need two files side by side (collision from two vehicles' simultaneous heading changes); derived observations cite their sources in `attributes.inferred_from` |
 | 3 | Timeline | `src/backend/app/modules/timeline/` | `build_timeline(observation_sets) -> Timeline` | `timeline.json` | Sorted events that group correlated observations and keep their `observation_ids` |
 | 4 | Contradictions | `src/backend/app/modules/contradictions/` | `detect_conflicts(observation_sets, timeline) -> ConflictReport` | `conflicts.json` | Finds the discrepancies listed in `scripts/generate_witness_statements.py::KNOWN_DISCREPANCIES` and the V1 sensor gap |
-| 5 | Reconstruction (backend) | `src/backend/app/modules/reconstruction/` | `build_reconstruction(obs, timeline, conflicts) -> Reconstruction` | `reconstruction.json` | Tracks for every vehicle over `[t_min_s, t_max_s]`, and a collision marker only if evidence supports it |
-| 5 | Reconstruction (frontend) | `src/frontend/src/components/ReconstructionViewer.jsx` | renders `Reconstruction` | — | The user can replay movements with the time slider |
+| 5 | Reconstruction (backend) | `src/backend/app/modules/reconstruction/` | `build_reconstruction(obs, timeline, conflicts) -> Reconstruction`; `build_event_analysis(obs, timeline) -> Reconstruction \| None` | `reconstruction.json` | Top-down tracks in metres for every positioned vehicle, a collision marker only if evidence supports it, and a `note` when nothing can be reconstructed; event analysis = footage + image-space tracks |
+| 5 | Reconstruction (frontend) | `ReconstructionViewer.jsx` (bottom, top-down map) and `EventAnalysis.jsx` (top right, footage) | render the two outputs | — | The user can replay movements with the time slider |
 | 6 | Dashboard | `src/frontend/src/` (everything else) | consumes `/api/*` | — | The user can upload evidence, run analysis and see all results in one place |
 
 ## Rules for each hand-off

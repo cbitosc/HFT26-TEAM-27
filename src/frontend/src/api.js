@@ -25,6 +25,7 @@ export const api = {
   timeline: () => request('/timeline'),
   conflicts: () => request('/conflicts'),
   reconstruction: () => request('/reconstruction'),
+  eventAnalysis: () => request('/event-analysis'),
 }
 
 // Thumbnail URL for a `frame:<n>` source ref of an uploaded video, or null.

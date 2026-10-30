@@ -28,7 +28,7 @@ from app.modules.contradictions import detect_conflicts
 from app.modules.extraction import extract_sensor, extract_witness
 from app.modules.fusion import fuse, resolve_entities
 from app.modules.ingestion import analyze_video
-from app.modules.reconstruction import build_reconstruction
+from app.modules.reconstruction import build_event_analysis, build_reconstruction
 from app.modules.timeline import build_timeline
 from app.schemas import (
     AnalysisRun,
@@ -241,6 +241,15 @@ def _run(tracker: Tracker) -> AnalysisRun:
     store.save_output("timeline.json", timeline)
     store.save_output("conflicts.json", conflicts)
     store.save_output("reconstruction.json", recon)
+    try:  # camera footage with detections (pixels): shown as Event Analysis, separate from the map
+        events_view = None if demo else build_event_analysis(observation_sets, timeline)
+    except Exception:
+        log.exception("event analysis failed")
+        events_view = None
+    if events_view is not None:
+        store.save_output("event_analysis.json", events_view)
+    else:
+        (config.RUN_DIR / "event_analysis.json").unlink(missing_ok=True)
     store.save_output("run.json", run)
     store.archive_latest(run.run_id)
     store.audit("analysis_finished", run_id=run.run_id, duration_s=round((run.finished_at - started).total_seconds(), 2),

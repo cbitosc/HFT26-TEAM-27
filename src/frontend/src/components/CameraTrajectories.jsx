@@ -16,7 +16,7 @@ function at(track, t) {
 }
 
 // Fixed-camera reconstruction: tracks drawn on the actual video frame, in image pixels.
-export default function CameraTrajectories({ data, time, onTimeChange, Panel }) {
+export default function CameraTrajectories({ data, time, onTimeChange, Panel, title = 'Event Analysis' }) {
   const [playing, setPlaying] = useState(false)
   const [showAll, setShowAll] = useState(true)
   const [view, setView] = useState(0) // 0 = all views
@@ -63,7 +63,7 @@ export default function CameraTrajectories({ data, time, onTimeChange, Panel }) 
   }
 
   return (
-    <Panel title="Reconstruction Viewer"
+    <Panel title={title}
       actions={
         <select value={view} onChange={(e) => setView(Number(e.target.value))} className="rounded border border-slate-200 text-xs">
           <option value={0}>All views</option>

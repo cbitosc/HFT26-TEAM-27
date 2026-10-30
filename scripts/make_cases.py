@@ -22,7 +22,15 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "eval" / "cases"
 
 
+RECONSTRUCTION = {"junction_side_impact": {"scene": "four_way_intersection", "min_vehicles": 2},
+                  "gps_rear_end": {"scene": "metric", "min_vehicles": 2},
+                  "cctv_motorway_speeds": {"scene": "metric", "min_vehicles": 3},
+                  "cctv_no_standard": {"empty": True},
+                  "dashcam_brake": {"empty": True}}
+
+
 def _write(case: str, case_json: dict, truth: dict) -> Path:
+    truth = {**truth, "reconstruction": RECONSTRUCTION[case]}
     d = OUT / case
     (d / "evidence").mkdir(parents=True, exist_ok=True)
     (d / "case.json").write_text(json.dumps(case_json, indent=2) + "\n")

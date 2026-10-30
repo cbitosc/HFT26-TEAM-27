@@ -92,3 +92,60 @@ def reconstruct_from_camera(observation_sets: list[ObservationSet], timeline: Ti
                     image=CameraImage(evidence_id=evidence_id, frame=background, width=int(width), height=int(height),
                                       views=[list(v) for v in views], fps=fps or None, t_offset_s=_offset(tracks))),
         t_min_s=round(t_min, 3), t_max_s=round(t_max, 3), vehicles=vehicles, collision=None)
+
+
+def reconstruct_ground_from_camera(observation_sets: list[ObservationSet], timeline: Timeline) -> Reconstruction | None:
+    """Top-down reconstruction (metres) from camera tracks of a calibrated view.
+
+    Each calibrated track carries ground_points [[t, X_lateral, Y_along_road]]. Different camera views
+    have their own road frames and cannot be overlaid without knowing how the cameras relate, so the
+    view with the most calibrated tracks is reconstructed and the others are named in the note.
+    """
+    tracks = [o for o in (o for s in observation_sets for o in s.observations)
+              if o.action == "track" and o.attributes.get("ground_points")]
+    if not tracks:
+        return None
+    per_view: dict[int, list[Observation]] = {}
+    for o in tracks:
+        per_view.setdefault(o.attributes.get("view", 1), []).append(o)
+    view, chosen = max(per_view.items(), key=lambda kv: len(kv[1]))
+    lateral_known = all(p[1] is not None for o in chosen for p in o.attributes["ground_points"])
+    vehicles = []
+    for o in chosen:
+        pts = [p for p in o.attributes["ground_points"] if p[2] is not None]
+        if len(pts) < 2:
+            continue
+        speeds = {round(t, 3): s for t, s in o.attributes.get("speed_points", [])}
+        track = []
+        for k, (t, x, y) in enumerate(pts):
+            a, b = pts[max(0, k - 1)], pts[min(len(pts) - 1, k + 1)]
+            dx = (b[1] or 0) - (a[1] or 0)
+            dy = b[2] - a[2]
+            track.append(TrackPoint(t_s=t, x_m=round(x or 0.0, 2), y_m=round(y, 2),
+                                    heading_deg=round(math.degrees(math.atan2(dx, dy)) % 360, 1),
+                                    speed_kmh=speeds.get(round(t, 3)), source="tracked", confidence=0.6))
+        mean = o.attributes.get("mean_speed_kmh")
+        vehicles.append(VehicleTrack(
+            vehicle_id=o.attributes["track_id"], label=f"{o.attributes['track_id']}" + (f" · ~{mean:g} km/h" if mean else ""),
+            color=VIEW_COLORS[(view - 1) % len(VIEW_COLORS)],
+            description=f"{o.attributes.get('direction', '')}; tracked on camera view {view}, "
+                        f"{o.attributes.get('calibration', '').replace('_', ' ')} calibration",
+            track=track, source_observation_ids=[o.id]))
+    if not vehicles:
+        return None
+    xs = [p.x_m for v in vehicles for p in v.track]
+    ys = [p.y_m for v in vehicles for p in v.track]
+    times = [p.t_s for v in vehicles for p in v.track]
+    half = max(10.0, (max(xs) - min(xs)) / 2, (max(ys) - min(ys)) / 2) * 1.15
+    others = sorted(v for v in per_view if v != view)
+    note = (f"Reconstructed from camera view {view} (calibrated): {len(vehicles)} vehicle track(s) on the road plane."
+            + ("" if lateral_known else " Lateral positions unknown (lane width not measured), drawn on one line.")
+            + (f" Views {', '.join(map(str, others))} are also calibrated but have their own road frame."
+               if others else "") + " Stationary vehicles are not tracked by motion.")
+    return Reconstruction(
+        incident_id=timeline.incident_id, generated_at=datetime.now(timezone.utc),
+        scene=Scene(type="metric", units="m", extent_m=round(half, 1),
+                    center_m=(round((max(xs) + min(xs)) / 2, 2), round((max(ys) + min(ys)) / 2, 2)),
+                    frame_note=f"camera view {view} road frame: x = across the road (m), "
+                               "y = distance from the camera along the road (m)"),
+        t_min_s=round(min(times), 3), t_max_s=round(max(times), 3), vehicles=vehicles, collision=None, note=note)

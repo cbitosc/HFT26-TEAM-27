@@ -16,7 +16,8 @@ from app.schemas import (AnalysisJob, AnalysisRun, AuditEvent, ConflictReport, I
                          Reconstruction, Timeline)
 
 RUN_ARTIFACTS = {"run": "run.json", "observations": "observations.json", "timeline": "timeline.json",
-                 "conflicts": "conflicts.json", "reconstruction": "reconstruction.json"}
+                 "conflicts": "conflicts.json", "reconstruction": "reconstruction.json",
+                 "event_analysis": "event_analysis.json"}
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -106,6 +107,12 @@ def timeline():
 @router.get("/conflicts", response_model=ConflictReport)
 def conflicts():
     return store.load_output("conflicts.json") or store.load_fixture("conflicts.json", ConflictReport)
+
+
+@router.get("/event-analysis", response_model=Reconstruction | None)
+def event_analysis():
+    """Camera footage with detections and image-space tracks (pixels), or null without video tracks."""
+    return store.load_output("event_analysis.json")
 
 
 @router.get("/reconstruction", response_model=Reconstruction)

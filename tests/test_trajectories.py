@@ -8,7 +8,7 @@ from app import config
 from app.modules import ingestion
 from app.modules.ingestion import analyze_video
 from app.modules.ingestion.video import detect_grid, probe_video, track_vehicles
-from app.modules.reconstruction import build_reconstruction
+from app.modules.reconstruction import build_event_analysis, build_reconstruction
 from app.modules.timeline import build_timeline
 from app.schemas import ConflictReport, Evidence, SourceType
 
@@ -69,8 +69,12 @@ def test_tracks_without_key_become_a_camera_reconstruction(tmp_path, monkeypatch
 
     timeline = build_timeline([obs])
     assert timeline.events == []  # raw tracks are not timeline events
-    recon = build_reconstruction([obs], timeline, ConflictReport(incident_id="x", generated_at=datetime.now(timezone.utc),
-                                                                 conflicts=[]))
+    empty = ConflictReport(incident_id="x", generated_at=datetime.now(timezone.utc), conflicts=[])
+    # No view is calibrated: there is no top-down reconstruction, and it says why.
+    top_down = build_reconstruction([obs], timeline, empty)
+    assert top_down.vehicles == [] and "calibrat" in top_down.note
+    # The footage with its tracks is event analysis (pixels).
+    recon = build_event_analysis([obs], timeline)
     assert recon.scene.type == "camera_image" and recon.scene.units == "px"
     assert recon.scene.image.evidence_id == "ev_cctv" and recon.scene.image.fps == FPS
     assert len(recon.scene.image.views) == 4

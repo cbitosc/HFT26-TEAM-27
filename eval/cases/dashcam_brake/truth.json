@@ -27,5 +27,8 @@
       ],
       "requires_llm": true
     }
-  ]
+  ],
+  "reconstruction": {
+    "empty": true
+  }
 }

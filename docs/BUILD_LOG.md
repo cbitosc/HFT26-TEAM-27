@@ -473,3 +473,20 @@ Now declared per case via `PUT /api/incident` (schema 1.2.0): `vehicles[{id, des
 **Every failure the harness found was an assumption from the demo or the one real clip:** exact column names, the tracker's centroid/dilation bias, the 2 s warm-up vs short clips, jitter-sensitive straightness, the speed sitting on the crash claim, "never slowed" read as "moving". Real clip after all fixes: 123 tracks (was 105); view 2 median 110 km/h. **Note:** the real clip's case no longer has a lane-marking standard by default, so its view 2 is no longer calibrated until `lane_markings` is declared.
 
 `pytest` **123 passed**; frontend build OK.
+
+## 2026-10-31 · Event Analysis vs Reconstruction
+
+The panel called "Reconstruction Viewer" was showing module 1's output on the footage: detections and image-space tracks over the video frames. That is evidence playback, not a reconstruction. Split into two outputs and two panels:
+
+| File | Change |
+| --- | --- |
+| `modules/reconstruction/__init__.py` | `build_reconstruction` = **top-down map in metres**: measured sensor/GPS paths if any; else `reconstruct_ground_from_camera`; else an empty map with `note` naming the missing evidence (no calibrated view, a dashcam that gives only relative motion, no positioned telemetry). New `build_event_analysis` = the camera-image scene |
+| `modules/reconstruction/camera.py` | `reconstruct_ground_from_camera`: calibrated tracks' `ground_points` → metric `VehicleTrack`s (source `tracked`, speeds per point) on the road plane of the view with the most calibrated tracks (views have separate road frames; the others are named in the note) |
+| `schemas.py` (1.3.0, additive) | `Reconstruction.note`, `Scene.frame_note` (e.g. "camera view 1 road frame: x = across the road, y = distance from the camera") |
+| `pipeline.py`, `routers/analysis.py` | `event_analysis.json` saved per run (removed when there is none); `GET /api/event-analysis`; artifact in run history |
+| Frontend | `EventAnalysis.jsx` (new, top right) wraps the camera view titled "Event Analysis"; `ReconstructionViewer.jsx` is now "Reconstruction", full width at the bottom, shows the frame note and the reason when empty; one shared clock clamped to both views' spans |
+| Tests / evaluation | `test_calibrated_camera_tracks_give_a_top_down_reconstruction` (synthetic road: lateral position within 0.4 m of the true −1.875 m lane centre, speed ~100 km/h); `test_trajectories` asserts uncalibrated tracks give event analysis, not a map. Evaluation gains a reconstruction check per case: **32/32** with the LLM |
+
+Your clip: Event Analysis shows 123 tracks plus the stopped van over the footage. Reconstruction is empty, and says why: no view is calibrated until the case declares a lane-marking standard or a manual calibration.
+
+`pytest` **124 passed**; frontend build OK.

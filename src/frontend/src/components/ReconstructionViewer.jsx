@@ -133,18 +133,17 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
     return { measured, signals: signalPhases(observations ?? []), known: observations != null && observations.length > 0 }
   }, [data, observations])
 
-  if (!data) return <Panel title="Reconstruction Viewer">Loading…</Panel>
+  if (!data) return <Panel title="Reconstruction">Loading…</Panel>
   if (data.scene.type === 'camera_image') {
-    return <CameraTrajectories data={data} time={time} onTimeChange={onTimeChange} Panel={Panel} />
+    return <CameraTrajectories data={data} time={time} onTimeChange={onTimeChange} Panel={Panel} title="Reconstruction" />
   }
   if (data.vehicles.length === 0) {
     return (
-      <Panel title="Reconstruction Viewer">
-        <div className="flex h-full min-h-48 flex-col items-center justify-center gap-1 text-center">
-          <p className="text-sm text-slate-600">No vehicle trajectories in this evidence.</p>
-          <p className="max-w-sm text-xs text-slate-400">
-            Trajectories come from sensor tracks with positions (x/y). Video and witness findings appear in the
-            timeline and contradictions instead.
+      <Panel title="Reconstruction">
+        <div className="flex h-full min-h-32 flex-col items-center justify-center gap-1 text-center">
+          <p className="text-sm text-slate-600">No top-down reconstruction for this evidence.</p>
+          <p className="max-w-lg text-xs text-slate-400">
+            {data.note ?? 'Reconstruction needs positional evidence: telemetry/GPS with positions, or a calibrated camera view.'}
           </p>
         </div>
       </Panel>
@@ -186,10 +185,12 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
   const signalNow = Object.entries(derived.signals).map(([appr, phases]) => [appr, signalAt(phases, time)]).filter(([, st]) => st)
 
   return (
-    <Panel title="Reconstruction Viewer"
+    <Panel title="Reconstruction"
       actions={
         <div className="flex items-center gap-2 text-xs">
-          <span className="text-slate-500">{junction ? 'declared junction · metres' : 'metric map · metres'}</span>
+          <span className="text-slate-500" title={data.note ?? ''}>
+            {junction ? 'declared junction · metres' : data.scene.frame_note ?? 'top-down map · metres'}
+          </span>
           <div className={`flex overflow-hidden rounded border border-slate-200 ${junction ? '' : 'hidden'}`}>
             {Object.keys(ZOOMS).map((z) => (
               <button key={z} onClick={() => setZoom(z)}

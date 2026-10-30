@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-SCHEMA_VERSION = "1.2.0"
+SCHEMA_VERSION = "1.3.0"
 
 
 # ---------------------------------------------------------------- evidence
@@ -203,6 +203,7 @@ class Scene(BaseModel):
     roads: dict[str, str] = Field(default_factory=dict, description="axis -> road name, e.g. {'ns': 'Main Rd'}")
     image: CameraImage | None = None
     center_m: tuple[float, float] | None = Field(None, description="metric: centre of the view (x, y) in metres")
+    frame_note: str | None = Field(None, description="What the axes mean when not compass-aligned, e.g. a camera's road frame")
 
 
 class Reconstruction(BaseModel):
@@ -214,6 +215,7 @@ class Reconstruction(BaseModel):
     t_max_s: float
     vehicles: list[VehicleTrack]
     collision: CollisionMarker | None = None
+    note: str | None = Field(None, description="Why the reconstruction is empty or limited, in plain words")
 
 
 # ------------------------------------------------------------ pipeline/API

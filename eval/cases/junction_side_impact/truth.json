@@ -79,5 +79,9 @@
         "dropout"
       ]
     }
-  ]
+  ],
+  "reconstruction": {
+    "scene": "four_way_intersection",
+    "min_vehicles": 2
+  }
 }

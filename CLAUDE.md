@@ -15,7 +15,8 @@ src/backend/app/
   store.py            evidence index, run history (storage/runs/<id>), audit log (storage/audit.jsonl)
   routers/            FastAPI endpoints (/api/evidence, /api/analysis/run, /api/timeline, ...)
   modules/<name>/     one package per architecture module; each one is a stub until built
-src/frontend/src/     React + Vite + Tailwind dashboard (4 panels in components/)
+src/frontend/src/     React + Vite + Tailwind dashboard: Evidence Manager, Event Analysis (footage), Timeline,
+                      Contradictions, Reconstruction (top-down map, bottom)
 fixtures/             hand-written example output of each module (the contract, as examples)
 data/                 demo evidence: data/sensor/*.csv, data/witness/*.txt, data/video/
 scripts/              scenario.py (ground truth), data generators, fixture author, schema export

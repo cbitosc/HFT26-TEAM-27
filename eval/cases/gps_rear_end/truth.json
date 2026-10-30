@@ -42,5 +42,9 @@
       ],
       "requires_llm": true
     }
-  ]
+  ],
+  "reconstruction": {
+    "scene": "metric",
+    "min_vehicles": 2
+  }
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import ContradictionExplorer from './components/ContradictionExplorer'
+import EventAnalysis from './components/EventAnalysis'
 import EvidenceManager from './components/EvidenceManager'
 import IncidentTimeline from './components/IncidentTimeline'
 import ReconstructionViewer from './components/ReconstructionViewer'
@@ -14,11 +15,17 @@ export default function App() {
 
   const loadResults = useCallback(async () => {
     try {
-      const [observations, timeline, conflicts, reconstruction, latest] = await Promise.all([
-        api.observations(), api.timeline(), api.conflicts(), api.reconstruction(), api.latestRun(),
+      const [observations, timeline, conflicts, reconstruction, eventAnalysis, latest] = await Promise.all([
+        api.observations(), api.timeline(), api.conflicts(), api.reconstruction(), api.eventAnalysis(), api.latestRun(),
       ])
-      setResults({ observations, timeline, conflicts, reconstruction })
-      setTime((t) => Math.min(Math.max(t, reconstruction.t_min_s), reconstruction.t_max_s))
+      setResults({ observations, timeline, conflicts, reconstruction, eventAnalysis })
+      // One clock for every panel: clamp to whatever the views cover.
+      const spans = [reconstruction, eventAnalysis].filter((r) => r && r.t_max_s > r.t_min_s)
+      if (spans.length) {
+        const lo = Math.min(...spans.map((r) => r.t_min_s))
+        const hi = Math.max(...spans.map((r) => r.t_max_s))
+        setTime((t) => Math.min(Math.max(t, lo), hi))
+      }
       setRun(latest)
       setError(null)
     } catch (e) {
@@ -59,7 +66,7 @@ export default function App() {
           <EvidenceManager run={run} observations={results?.observations} onAnalysisDone={loadResults} />
         </div>
         <div className="lg:col-span-2">
-          <ReconstructionViewer data={results?.reconstruction} time={time} onTimeChange={setTime} />
+          <EventAnalysis data={results?.eventAnalysis} time={time} onTimeChange={setTime} />
         </div>
         <div className="lg:col-span-2">
           <IncidentTimeline timeline={results?.timeline} time={time} selectedObs={selectedObs} onFocus={focus}
@@ -67,6 +74,9 @@ export default function App() {
         </div>
         <div className="lg:col-span-1">
           <ContradictionExplorer report={results?.conflicts} observationsById={observationsById} onFocus={focus} />
+        </div>
+        <div className="lg:col-span-3">
+          <ReconstructionViewer data={results?.reconstruction} time={time} onTimeChange={setTime} />
         </div>
       </main>
     </div>

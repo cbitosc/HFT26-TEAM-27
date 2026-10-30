@@ -48,6 +48,7 @@ def run_case(client, config, case_dir: Path) -> dict:
     run = client.post("/api/analysis/run").json()
     get = lambda name: client.get(f"/api/{name}").json()  # noqa: E731
     return {"run": run, "timeline": get("timeline"), "conflicts": get("conflicts")["conflicts"],
+            "reconstruction": get("reconstruction"),
             "observations": [o for s in get("observations") for o in s["observations"]],
             "warnings": [w for s in get("observations") for w in s["warnings"]]}
 
@@ -92,6 +93,16 @@ def score(truth: dict, out: dict, llm: bool) -> list[dict]:
             k.lower() in (x["title"] + " " + x["description"] + " " + " ".join(x["observation_ids"])).lower()
             or k in [obs.get(i, {}).get("vehicle_id") for i in x["observation_ids"]] for k in c["contains"])), None)
         add("conflict", c["desc"], hit is not None, hit["title"] if hit else "not found")
+
+    if want := truth.get("reconstruction"):
+        rec = out["reconstruction"]
+        if want.get("empty"):
+            add("reconstruction", "no top-down map without positional evidence", not rec["vehicles"] and bool(rec.get("note")),
+                rec.get("note") or f"{len(rec['vehicles'])} vehicle(s)")
+        else:
+            add("reconstruction", f"{want['scene']} map with >= {want['min_vehicles']} vehicles",
+                rec["scene"]["type"] == want["scene"] and len(rec["vehicles"]) >= want["min_vehicles"],
+                f"{rec['scene']['type']}, {len(rec['vehicles'])} vehicle(s)")
 
     if "calibrated_views" in truth:
         calibrated = sorted({int(w.split()[2]) for w in out["warnings"] if w.startswith("Camera view") and " calibrated (" in w})

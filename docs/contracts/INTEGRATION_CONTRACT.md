@@ -1,6 +1,6 @@
 # Integration contract
 
-**Source of truth:** [`src/backend/app/schemas.py`](../../src/backend/app/schemas.py) (schema version `1.2.0`).
+**Source of truth:** [`src/backend/app/schemas.py`](../../src/backend/app/schemas.py) (schema version `1.3.0`).
 JSON Schema copies live in [`schemas/`](schemas/). Regenerate them with `python scripts/export_schemas.py`.
 Example payloads for every shape are in [`/fixtures`](../../fixtures).
 
@@ -85,7 +85,8 @@ extrapolated / tracked / estimated) and `confidence`.
 | GET | `/api/observations` | `ObservationSet[]` |
 | GET | `/api/timeline` | `Timeline` |
 | GET | `/api/conflicts` | `ConflictReport` |
-| GET | `/api/reconstruction` | `Reconstruction` |
+| GET | `/api/reconstruction` | `Reconstruction`: the **top-down map in metres** (sensor/GPS paths, else a calibrated camera view on the road plane, else empty with `note` saying what evidence is missing) |
+| GET | `/api/event-analysis` | `Reconstruction` with a `camera_image` scene: footage with detections and image-space tracks (pixels), or `null` without video tracks |
 
 Before the first run, the GET endpoints serve fixtures.
 

@@ -20,5 +20,9 @@
       "kmh": 120,
       "tol_pct": 15
     }
-  ]
+  ],
+  "reconstruction": {
+    "scene": "metric",
+    "min_vehicles": 3
+  }
 }
