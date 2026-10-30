@@ -32,8 +32,9 @@ from typing import Callable
 from app import config
 from app.schemas import Evidence, Observation, ObservationSet, SourceRef, SourceType
 
-from .video import (MOVING_CAMERA_SHARE, Frame, VideoInfo, camera_motion_share, encode_jpeg_b64,
-                    extract_frames, probe_video, select_keyframes, static_regions, with_followers)
+from .video import (MOVING_CAMERA_SHARE, Frame, Track, VideoInfo, camera_motion_share, detect_grid,
+                    encode_jpeg_b64, extract_frames, probe_video, select_keyframes, static_regions, track_vehicles,
+                    with_followers)
 from .vision import PROMPTS, CameraMode, FrameAnalysis, VisionClient, VisionError
 
 # Ungated on Featherless; google/gemma-3-27b-it is gated (needs HuggingFace OAuth, else 403).
@@ -48,6 +49,8 @@ T0_OFFSET_S = float(os.environ.get("VIDEO_T0_OFFSET_S", "0"))
 EGO_VEHICLE_ID = os.environ.get("VIDEO_EGO_VEHICLE_ID", "V1")
 MIN_CONFIDENCE = 0.2
 CAMERA_MODE = os.environ.get("VIDEO_CAMERA_MODE", "auto").strip().lower()
+TRACKING = os.environ.get("VIDEO_TRACKING", "1") != "0"  # fixed cameras: OpenCV motion tracks
+MAX_TRACKS = int(os.environ.get("VIDEO_MAX_TRACKS", "200"))
 PAIR_GAP_S = float(os.environ.get("VIDEO_PAIR_GAP_S", "1.0"))  # fixed cameras: second image this much later
 # Fixed cameras: the model often misreads flowing traffic as "stopped", so every stopped vehicle must
 # come with a box and that patch of the image must stay unchanged a few seconds later (video.static_regions).
@@ -110,8 +113,36 @@ def analyze_video(evidence: Evidence, client: VisionClient | None = None,
     report = progress or (lambda done, total, note: None)
     report(0, 0, "scanning video for keyframes")
     info, frames = load_frames(evidence)
+
+    # Judge the camera on consecutive frames: keyframes are seconds apart, so traffic alone
+    # would change most of the picture between them and every camera would look like a dashcam.
+    step = max(1, round(info.fps / SAMPLE_FPS))
+    burst = extract_frames(evidence.stored_path, info, [i * step for i in range(min(16, info.frame_count // step))])
+    mode, why = detect_camera_mode(burst or frames)
+    warnings: list[str] = [f"Camera mode: {mode} ({why})."]
+    if T0_OFFSET_S == 0:
+        warnings.append(f"{'Dashcam' if mode == 'dashcam' else 'Camera'} clock offset assumed 0 s relative to "
+                        "the incident reference time (not verified).")
+
+    # Fixed cameras: vehicle trajectories from the pixels themselves (OpenCV only, no model, no key).
+    track_obs: list[Observation] = []
+    views: list[tuple[int, int, int, int]] = []
+    if mode == "fixed" and TRACKING and frames:
+        report(0, 0, "tracking vehicles")
+        views = detect_grid(frames[0].image)
+        tracks = track_vehicles(evidence.stored_path, info, views)
+        track_obs = tracks_to_observations(evidence, info, tracks, views)
+        warnings.append(f"{len(track_obs)} vehicle track(s) from motion in {len(views)} camera view(s) "
+                        "(pixel coordinates; stationary vehicles are not tracked by motion).")
+
     if client is None:
         if not config.FEATHERLESS_API_KEY:
+            if track_obs:
+                warnings.append("FEATHERLESS_API_KEY is not set: vehicle tracks only, no vision-model findings.")
+                return ObservationSet(source_type=SourceType.video, evidence_id=evidence.id,
+                                      producer="evidence_ingestion:opencv-tracking",
+                                      generated_at=datetime.now(timezone.utc), observations=track_obs,
+                                      warnings=warnings)
             raise NotImplementedError(
                 f"video valid ({info.frame_count} frames @ {info.fps:.1f} fps, {len(frames)} sampled) "
                 "but FEATHERLESS_API_KEY is not set; no vision analysis"
@@ -121,19 +152,10 @@ def analyze_video(evidence: Evidence, client: VisionClient | None = None,
     else:
         owns_client = False
 
-    # Judge the camera on consecutive frames: keyframes are seconds apart, so traffic alone
-    # would change most of the picture between them and every camera would look like a dashcam.
-    step = max(1, round(info.fps / SAMPLE_FPS))
-    burst = extract_frames(evidence.stored_path, info, [i * step for i in range(min(16, info.frame_count // step))])
-    mode, why = detect_camera_mode(burst or frames)
     if mode == "fixed" and PAIR_GAP_S > 0:
         frames = with_followers(evidence.stored_path, info, frames, PAIR_GAP_S)
-    warnings: list[str] = [f"Camera mode: {mode} ({why}).",
-                           f"{len(frames)} keyframes analysed out of {info.frame_count} frames "
-                           f"({info.duration_s:.0f} s @ {info.fps:g} fps)."]
-    if T0_OFFSET_S == 0:
-        warnings.append(f"{'Dashcam' if mode == 'dashcam' else 'Camera'} clock offset assumed 0 s relative to "
-                        "the incident reference time (not verified).")
+    warnings.append(f"{len(frames)} keyframes analysed out of {info.frame_count} frames "
+                    f"({info.duration_s:.0f} s @ {info.fps:g} fps).")
     model = getattr(client, "model", VISION_MODEL)
     cache = _Cache(evidence, model, mode, PAIR_GAP_S if mode == "fixed" else 0.0)
 
@@ -179,7 +201,7 @@ def analyze_video(evidence: Evidence, client: VisionClient | None = None,
         if dropped["transient"]:
             warnings.append(f"{dropped['transient']} momentary claim(s) (braking, lane changes, swerves) dropped: "
                             "they can't be judged reliably from keyframes seconds apart.")
-    observations = frames_to_observations(evidence, info, analysed, mode, persistence)
+    observations = frames_to_observations(evidence, info, analysed, mode, persistence) + track_obs
     return ObservationSet(
         source_type=SourceType.video,
         evidence_id=evidence.id,
@@ -188,6 +210,36 @@ def analyze_video(evidence: Evidence, client: VisionClient | None = None,
         observations=observations,
         warnings=warnings,
     )
+
+
+def tracks_to_observations(evidence: Evidence, info: VideoInfo, tracks: list[Track],
+                           views: list[tuple[int, int, int, int]]) -> list[Observation]:
+    """One compact observation per track (action "track"): all its points ride in attributes.points."""
+    longest = sorted(tracks, key=lambda tr: tr.points[-1][0] - tr.points[0][0], reverse=True)[:MAX_TRACKS]
+    out = []
+    for n, tr in enumerate(sorted(longest, key=lambda tr: (tr.points[0][0], tr.view)), start=1):
+        (t0, x0, y0), (t1, x1, y1) = tr.points[0], tr.points[-1]
+        dist = sum(math.hypot(b[1] - a[1], b[2] - a[2]) for a, b in zip(tr.points, tr.points[1:]))
+        out.append(Observation(
+            id=f"vid_{evidence.id}_trk_{n:03d}",
+            source_type=SourceType.video,
+            source_ref=SourceRef(evidence_id=evidence.id, file=evidence.filename,
+                                 locator=f"frames:{tr.first_frame}-{tr.last_frame}"),
+            timestamp=config.INCIDENT_REFERENCE_TIME + timedelta(seconds=t0 + T0_OFFSET_S),
+            t_rel_s=round(t0 + T0_OFFSET_S, 3),
+            time_uncertainty_s=round(1 / info.fps, 3),
+            vehicle_id=None,
+            vehicle_description=f"moving vehicle, camera view {tr.view}",
+            action="track",
+            attributes={"track_id": f"T{tr.view}-{n:03d}", "view": tr.view, "camera": "fixed", "units": "px",
+                        "frame_size": [info.width, info.height], "fps": round(info.fps, 3),
+                        "view_box": list(views[tr.view - 1]), "grid": [list(v) for v in views],
+                        "direction": "towards camera" if y1 > y0 else "away from camera",
+                        "mean_speed_px_s": round(dist / max(t1 - t0, 1e-6), 1),
+                        "points": [[round(t + T0_OFFSET_S, 3), x, y] for t, x, y in tr.points]},
+            confidence=0.6,
+        ))
+    return out
 
 
 def view_of_box(box: list[float] | None, views: int | None) -> int | None:
@@ -346,6 +398,9 @@ def frames_to_observations(
                 attrs = {"label": v.label}
                 if v.direction:
                     attrs["direction"] = v.direction
+                if fixed and v.box:
+                    attrs["box"] = v.box  # 0-1000 over the whole frame; lets the reconstruction place it
+                    attrs["frame_size"] = [info.width, info.height]
                 if (p := (persistence or {}).get((v.view, _key(v.label)))) and v.action == "stopped":
                     attrs.update(seen_in_keyframes=p[0], first_seen_s=round(p[1], 2), last_seen_s=round(p[2], 2))
                 emit(frame, v.action, v.confidence, description=v.description or v.label,

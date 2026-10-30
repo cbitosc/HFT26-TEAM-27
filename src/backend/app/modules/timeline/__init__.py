@@ -227,7 +227,8 @@ class _Builder:
     def __init__(self, observation_sets: list[ObservationSet]):
         rows = [{"obs": o, "id": o.id, "t": _t_rel(o), "unc": float(o.time_uncertainty_s),
                  "order": o.attributes.get("order"), "stmt": _statement_key(o)}
-                for o in _resolve([o for s in observation_sets for o in s.observations])]
+                for o in _resolve([o for s in observation_sets for o in s.observations
+                                   if o.action != "track"])]  # raw motion tracks belong to the reconstruction
         df = pd.DataFrame(rows, columns=["obs", "id", "t", "unc", "order", "stmt"])
         df = df.drop_duplicates(subset="id", keep="first")
         timed = df["t"].notna()

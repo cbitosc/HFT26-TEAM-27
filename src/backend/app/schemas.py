@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-SCHEMA_VERSION = "1.0.3"
+SCHEMA_VERSION = "1.1.0"
 
 
 # ---------------------------------------------------------------- evidence
@@ -134,7 +134,7 @@ class ConflictReport(BaseModel):
 
 class TrackPoint(BaseModel):
     t_s: float
-    x_m: float
+    x_m: float = Field(description="Scene units: metres, or pixels when scene.units == 'px'")
     y_m: float
     heading_deg: float
     speed_kmh: float | None = None
@@ -157,11 +157,26 @@ class CollisionMarker(BaseModel):
     supporting_observation_ids: list[str]
 
 
+class CameraImage(BaseModel):
+    """The video frame a camera_image scene is drawn on (fetch it from /api/evidence/{id}/frames/{frame})."""
+    evidence_id: str
+    frame: int
+    width: int
+    height: int
+    views: list[list[int]] = Field(default_factory=list, description="[x1, y1, x2, y2] per camera view, in px")
+    fps: float | None = Field(None, description="Video frame rate: frame index = round((t_s - t_offset_s) * fps)")
+    t_offset_s: float = 0.0
+
+
 class Scene(BaseModel):
-    type: Literal["four_way_intersection"] = "four_way_intersection"
-    extent_m: float = Field(description="Half-width of the square view around the origin")
-    lane_width_m: float
+    """four_way_intersection: metres, +x east, +y north. camera_image: pixels of `image`, +y down.
+    TrackPoint.x_m / y_m are in the scene's `units`."""
+    type: Literal["four_way_intersection", "camera_image"] = "four_way_intersection"
+    units: Literal["m", "px"] = "m"
+    extent_m: float | None = Field(None, description="Intersection: half-width of the square view around the origin")
+    lane_width_m: float | None = None
     roads: dict[str, str] = Field(default_factory=dict, description="axis -> road name, e.g. {'ns': 'Main Rd'}")
+    image: CameraImage | None = None
 
 
 class Reconstruction(BaseModel):

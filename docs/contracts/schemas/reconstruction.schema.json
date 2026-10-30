@@ -1,5 +1,63 @@
 {
   "$defs": {
+    "CameraImage": {
+      "description": "The video frame a camera_image scene is drawn on (fetch it from /api/evidence/{id}/frames/{frame}).",
+      "properties": {
+        "evidence_id": {
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "frame": {
+          "title": "Frame",
+          "type": "integer"
+        },
+        "width": {
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "title": "Height",
+          "type": "integer"
+        },
+        "views": {
+          "description": "[x1, y1, x2, y2] per camera view, in px",
+          "items": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "title": "Views",
+          "type": "array"
+        },
+        "fps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Video frame rate: frame index = round((t_s - t_offset_s) * fps)",
+          "title": "Fps"
+        },
+        "t_offset_s": {
+          "default": 0.0,
+          "title": "T Offset S",
+          "type": "number"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "frame",
+        "width",
+        "height"
+      ],
+      "title": "CameraImage",
+      "type": "object"
+    },
     "CollisionMarker": {
       "properties": {
         "t_s": {
@@ -39,21 +97,50 @@
       "type": "object"
     },
     "Scene": {
+      "description": "four_way_intersection: metres, +x east, +y north. camera_image: pixels of `image`, +y down.\nTrackPoint.x_m / y_m are in the scene's `units`.",
       "properties": {
         "type": {
-          "const": "four_way_intersection",
           "default": "four_way_intersection",
+          "enum": [
+            "four_way_intersection",
+            "camera_image"
+          ],
           "title": "Type",
           "type": "string"
         },
+        "units": {
+          "default": "m",
+          "enum": [
+            "m",
+            "px"
+          ],
+          "title": "Units",
+          "type": "string"
+        },
         "extent_m": {
-          "description": "Half-width of the square view around the origin",
-          "title": "Extent M",
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Intersection: half-width of the square view around the origin",
+          "title": "Extent M"
         },
         "lane_width_m": {
-          "title": "Lane Width M",
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lane Width M"
         },
         "roads": {
           "additionalProperties": {
@@ -62,12 +149,19 @@
           "description": "axis -> road name, e.g. {'ns': 'Main Rd'}",
           "title": "Roads",
           "type": "object"
+        },
+        "image": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CameraImage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
-      "required": [
-        "extent_m",
-        "lane_width_m"
-      ],
       "title": "Scene",
       "type": "object"
     },
@@ -78,6 +172,7 @@
           "type": "number"
         },
         "x_m": {
+          "description": "Scene units: metres, or pixels when scene.units == 'px'",
           "title": "X M",
           "type": "number"
         },
@@ -164,7 +259,7 @@
   },
   "properties": {
     "schema_version": {
-      "default": "1.0.3",
+      "default": "1.1.0",
       "title": "Schema Version",
       "type": "string"
     },

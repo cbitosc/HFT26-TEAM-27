@@ -150,7 +150,7 @@
   "description": "Output of one extractor run over one piece of evidence.",
   "properties": {
     "schema_version": {
-      "default": "1.0.3",
+      "default": "1.1.0",
       "title": "Schema Version",
       "type": "string"
     },

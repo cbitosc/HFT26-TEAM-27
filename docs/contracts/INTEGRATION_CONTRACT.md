@@ -1,6 +1,6 @@
 # Integration contract
 
-**Source of truth:** [`src/backend/app/schemas.py`](../../src/backend/app/schemas.py) (schema version `1.0.3`).
+**Source of truth:** [`src/backend/app/schemas.py`](../../src/backend/app/schemas.py) (schema version `1.1.0`).
 JSON Schema copies live in [`schemas/`](schemas/). Regenerate them with `python scripts/export_schemas.py`.
 Example payloads for every shape are in [`/fixtures`](../../fixtures).
 
@@ -40,6 +40,8 @@ upload ──► Evidence ──► [1] analyze_video    ─┐
 - **Timeline** — `incident_id, reference_time, events[]`; each **TimelineEvent** has `t_start_s, t_end_s, label, category, vehicle_ids, observation_ids, source_types, confidence, uncertainty_s`
 - **ConflictReport** — `conflicts[]`; each **Conflict** has `type ∈ {numeric_mismatch, timestamp_overlap, semantic, missing_evidence}`, `severity ∈ {low, medium, high}`, `title, description, observation_ids, t_range_s, details{}`
 - **Reconstruction** — `scene{extent_m, lane_width_m, roads}, t_min_s, t_max_s, vehicles[{vehicle_id, label, color, track[{t_s,x_m,y_m,heading_deg,speed_kmh}]}], collision{t_s,x_m,y_m,confidence,supporting_observation_ids}`
+  - `scene.type = "four_way_intersection"` (units m, +y north) from sensor tracks, or `"camera_image"` (units **px**, +y down) from fixed-camera video: `scene.image{evidence_id, frame, width, height, views, fps, t_offset_s}` is the frame the tracks are drawn on (`/api/evidence/{id}/frames/{n}`). Track ids `T<view>-<n>` are moving vehicles, `S<view>-<n>` are verified stopped vehicles. Metric tracks win when both exist
+  - Module 1 delivers camera tracks as observations with `action: "track"` and `attributes.points = [[t, x_px, y_px], …]`. The timeline and contradiction modules ignore them
 
 ## HTTP API (FastAPI, port 8000)
 

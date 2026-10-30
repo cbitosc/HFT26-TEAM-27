@@ -198,7 +198,20 @@ def build_report(run_id: str | None = None, narrative: bool = True) -> IncidentR
     md.append("")
 
     md += ["## Reconstruction", ""]
-    if recon.vehicles:
+    if recon.vehicles and recon.scene.type == "camera_image":
+        moving = [v for v in recon.vehicles if v.vehicle_id.startswith("T")]
+        still = [v for v in recon.vehicles if v.vehicle_id.startswith("S")]
+        per_view = {}
+        for v in moving:
+            per_view[v.vehicle_id[1:].split("-")[0]] = per_view.get(v.vehicle_id[1:].split("-")[0], 0) + 1
+        md.append(f"{len(moving)} moving-vehicle trajectories tracked on the camera image over "
+                  f"t={recon.t_min_s:g}–{recon.t_max_s:g} s ("
+                  + ", ".join(f"view {k}: {n}" for k, n in sorted(per_view.items())) + "), in image pixels "
+                  "(no camera calibration, so no metric positions or speeds).")
+        for v in still:
+            md.append(f"- Stationary: {v.label}, t={v.track[0].t_s:g}–{v.track[-1].t_s:g} s, at pixel "
+                      f"({v.track[0].x_m:g}, {v.track[0].y_m:g}) — {', '.join(_cite(by_id.get(i)) for i in v.source_observation_ids)}")
+    elif recon.vehicles:
         md.append(f"Tracks for {', '.join(v.label for v in recon.vehicles)} over t={recon.t_min_s:g}–{recon.t_max_s:g} s.")
         if recon.collision:
             md.append(f"Collision point ({recon.collision.x_m:g} m, {recon.collision.y_m:g} m) at t={recon.collision.t_s:g} s, "

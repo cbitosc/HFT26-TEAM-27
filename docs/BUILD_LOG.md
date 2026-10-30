@@ -392,3 +392,24 @@ Headline, evidence table with hashes, timeline (t and clock), contradictions wit
 
 ### Tests
 `pytest` **107 passed** (+7): fusion (`test_fusion.py`); integrity, history, audit, report and incident (`test_integrity_and_history.py`); updated stage and upload expectations. Verified live: demo evidence via the CLI and the API, and your uploaded dataset via the running backend.
+
+## 2026-10-31 · Trajectory reconstruction from fixed-camera video
+
+**Problem:** reconstruction only used sensor tracks with x/y in metres. The example dataset (4-view motorway CCTV and video-derived CSVs) has none, so the viewer said "No vehicle trajectories".
+
+**Now:** 105 moving-vehicle tracks + the verified stopped van, replayed on the real video frames. Tracking takes ~4.6 s for the 60 s clip, uses OpenCV only (no API key) and is cached nowhere because it is cheap.
+
+| File | Change |
+| --- | --- |
+| `modules/ingestion/video.py` | `detect_grid`: camera views from full-length dark separator lines (any grid; 1 view if none). `track_vehicles`: per-view MOG2 background subtraction (shadows dropped) → blobs → constant-velocity greedy matching with a gate that grows towards the camera. The far field (top fifth) is skipped where vehicles merge. Tracks are split where they reverse and kept only if ≥1.5 s, ≥30 px net movement and ≥0.8 straightness (removes most identity swaps). Thresholds scale with view size (tuned on 479×300). Points are smoothed (3-point mean) and thinned to 4 Hz |
+| `modules/ingestion/__init__.py` | Fixed cameras: tracking runs first, with or without a key. Without a key, the stage is `real` with tracks only (was `skipped`). Each track is one observation, `action: "track"`, `attributes.points = [[t, x_px, y_px], …]`, plus view, grid, frame size, fps, direction, mean px/s; locator `frames:a-b`. At most `VIDEO_MAX_TRACKS` (200) longest; `VIDEO_TRACKING=0` disables it. Verified stopped vehicles now carry their `box` and `frame_size` |
+| `modules/reconstruction/camera.py` (new) | `reconstruct_from_camera`: `Scene(type="camera_image", units="px", image={evidence_id, frame, width, height, views, fps, t_offset_s})`; moving tracks `T<view>-<n>` coloured by view with heading from motion; stopped vehicles `S<view>-<n>` at their box centre for their seen span. Used when no metric (sensor) tracks exist |
+| `modules/timeline`, `modules/contradictions/context.py` | Ignore `track` observations (they are geometry, not claims or events) |
+| `schemas.py` | **1.1.0** (minor): `Scene.type` adds `camera_image`, `Scene.units`, `Scene.image` (`CameraImage`); `extent_m`/`lane_width_m` optional; `TrackPoint.x_m/y_m` are in scene units |
+| `report.py` | The reconstruction section describes camera scenes (tracks per view, stationary vehicles with citations) |
+| `src/frontend/src/components/CameraTrajectories.jsx` (new), `ReconstructionViewer.jsx` | Needed to see it: the replay draws tracks over **the video frame at the current time** (0.5 s steps via the frame endpoint), moving vehicles as dots, stopped ones as red squares; view selector, full-paths toggle, play/slider. Checked in the browser: at t=20 s in view 2 the dots sit on the actual truck and car |
+| `tests/test_trajectories.py` (new) | Grid detection; tracker on a synthetic 2×2 CCTV clip (down / across motion); no-key run → tracks → empty timeline → camera reconstruction with all 4 views. The synthetic clip caught two bugs: views without tracks dropped from the scene, and size thresholds hard-coded for one resolution |
+
+**Limits:** pixels, not metres (that needs a calibration per camera view, e.g. 4 known road points). Coverage is partial: dense or merged traffic and very near vehicles are dropped by the quality filter rather than tracked wrongly. Stopped vehicles are invisible to motion tracking and come only from the vision model's verified findings.
+
+`pytest` **110 passed**; frontend build OK.

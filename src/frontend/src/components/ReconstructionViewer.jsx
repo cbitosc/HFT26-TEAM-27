@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
+import CameraTrajectories from './CameraTrajectories'
 import Panel from './Panel'
 
 const SIGNAL_COLORS = { red: '#dc2626', yellow: '#eab308', green: '#16a34a' }
@@ -133,6 +134,9 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
   }, [data, observations])
 
   if (!data) return <Panel title="Reconstruction Viewer">Loading…</Panel>
+  if (data.scene.type === 'camera_image') {
+    return <CameraTrajectories data={data} time={time} onTimeChange={onTimeChange} Panel={Panel} />
+  }
   if (data.vehicles.length === 0) {
     return (
       <Panel title="Reconstruction Viewer">

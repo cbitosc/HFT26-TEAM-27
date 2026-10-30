@@ -48,6 +48,8 @@ class Context:
         seen: set[str] = set()
         for s in observation_sets:
             for o in s.observations:
+                if o.action == "track":
+                    continue  # raw motion tracks carry no claims to compare
                 if o.id not in seen:
                     seen.add(o.id)
                     obs.append(o)

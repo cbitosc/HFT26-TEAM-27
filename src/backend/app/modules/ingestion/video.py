@@ -231,3 +231,147 @@ def static_regions(path: str, info: VideoInfo, checks: list[tuple[int, list[floa
         out.append({"static": diff <= STATIC_MAX_DIFF and edges >= STATIC_MIN_EDGES,
                     "max_diff": round(diff, 1), "edges": round(edges, 3)})
     return out
+
+
+# ------------------------------------------------------------------ fixed-camera tracking
+
+def detect_grid(image: np.ndarray, dark: int = 40, min_share: float = 0.95) -> list[tuple[int, int, int, int]]:
+    """Camera views in a multi-view frame, as (x1, y1, x2, y2), left-to-right, top-to-bottom.
+
+    Views are separated by full-length dark lines; with none found, the whole frame is one view.
+    """
+    g = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
+    h, w = g.shape
+
+    def cuts(share: np.ndarray, length: int) -> list[int]:
+        idx = [i for i in range(length) if share[i] >= min_share and 0.1 * length < i < 0.9 * length]
+        groups: list[list[int]] = []
+        for i in idx:
+            if groups and i - groups[-1][-1] <= 1:
+                groups[-1].append(i)
+            else:
+                groups.append([i])
+        return [(grp[0], grp[-1]) for grp in groups]
+
+    cols = cuts((g < dark).mean(axis=0), w)
+    rows = cuts((g < dark).mean(axis=1), h)
+    xs = [0] + [v for a, b in cols for v in (a, b + 1)] + [w]
+    ys = [0] + [v for a, b in rows for v in (a, b + 1)] + [h]
+    return [(xs[i], ys[j], xs[i + 1], ys[j + 1]) for j in range(0, len(ys) - 1, 2) for i in range(0, len(xs) - 1, 2)]
+
+
+@dataclass
+class Track:
+    view: int                                  # 1-based camera view
+    points: list[tuple[float, float, float]]   # (t_s, x_px, y_px) in full-frame pixels
+    first_frame: int
+    last_frame: int
+
+
+def track_vehicles(path: str, info: VideoInfo, views: list[tuple[int, int, int, int]],
+                   warmup_s: float = 2.0) -> list[Track]:
+    """Moving-vehicle tracks per camera view: background subtraction + constant-velocity matching.
+
+    Only for fixed cameras. Stationary vehicles fade into the background model and are not tracked
+    (verified stopped vehicles come from the vision model instead). Tracks are split where they
+    reverse direction and kept only if they last >= 1.5 s, move >= 30 px and are fairly straight,
+    which removes most identity swaps in dense, distant traffic.
+    """
+    subs = [cv2.createBackgroundSubtractorMOG2(history=150, varThreshold=25, detectShadows=True) for _ in views]
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    warmup = round(warmup_s * info.fps)
+    tracks: list[dict] = []
+    active: list[list[dict]] = [[] for _ in views]
+    cap = cv2.VideoCapture(path)
+    try:
+        i = 0
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            t = i / info.fps
+            for v, (x1, y1, x2, y2) in enumerate(views):
+                mask = subs[v].apply(frame[y1:y2, x1:x2])
+                if i < warmup:
+                    continue
+                mask = cv2.threshold(mask, 200, 255, cv2.THRESH_BINARY)[1]  # 127 = shadow
+                mask = cv2.dilate(cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel), kernel, iterations=2)
+                n, _, stats, cent = cv2.connectedComponentsWithStats(mask)
+                vh = y2 - y1
+                # Thresholds were tuned on 479x300 views; scale them so any resolution behaves the same.
+                area_k = (x2 - x1) * vh / (479 * 300)
+                # Skip the far field (top fifth) where vehicles merge; size floor grows towards the camera.
+                dets = [(cent[k][0] + x1, cent[k][1] + y1) for k in range(1, n)
+                        if cent[k][1] > 0.2 * vh and stats[k][4] >= area_k * (40 + 400 * (cent[k][1] / vh) ** 2)]
+                used: set[int] = set()
+                for tr in sorted(active[v], key=lambda tr: -len(tr["pts"])):
+                    pt, px, py = tr["pts"][-1]
+                    vx, vy = tr["vel"]
+                    dt = t - pt
+                    ex, ey = px + vx * dt, py + vy * dt
+                    gate = (6 + 30 * (py - y1) / vh) * vh / 300 + 0.3 * float(np.hypot(vx, vy)) * dt
+                    best, best_d = None, gate
+                    for j, (dx, dy) in enumerate(dets):
+                        if j not in used and (d := float(np.hypot(dx - ex, dy - ey))) < best_d:
+                            best, best_d = j, d
+                    if best is not None:
+                        dx, dy = dets[best]
+                        used.add(best)
+                        if dt > 0:
+                            tr["vel"] = (0.6 * vx + 0.4 * (dx - px) / dt, 0.6 * vy + 0.4 * (dy - py) / dt)
+                        tr["pts"].append((t, dx, dy))
+                        tr["last"] = i
+                for j, (dx, dy) in enumerate(dets):
+                    if j not in used:
+                        tr = {"view": v + 1, "pts": [(t, dx, dy)], "vel": (0.0, 0.0), "first": i, "last": i}
+                        active[v].append(tr)
+                        tracks.append(tr)
+                active[v] = [tr for tr in active[v] if t - tr["pts"][-1][0] <= 0.5]
+            i += 1
+    finally:
+        cap.release()
+
+    out: list[Track] = []
+    for tr in tracks:
+        vh = views[tr["view"] - 1][3] - views[tr["view"] - 1][1]
+        for seg in _split_on_reversal(tr["pts"]):
+            if _plausible(seg, min_move=30.0 * vh / 300):
+                frames = (round(seg[0][0] * info.fps), round(seg[-1][0] * info.fps))
+                out.append(Track(view=tr["view"], points=_smooth(seg), first_frame=frames[0], last_frame=frames[1]))
+    return out
+
+
+def _split_on_reversal(pts: list[tuple[float, float, float]]) -> list[list[tuple[float, float, float]]]:
+    segs = [[pts[0]]]
+    for a, b, c in zip(pts, pts[1:], pts[2:]):
+        u = np.array([b[1] - a[1], b[2] - a[2]])
+        w = np.array([c[1] - b[1], c[2] - b[2]])
+        nu, nw = np.linalg.norm(u), np.linalg.norm(w)
+        if nu > 2 and nw > 2 and float(np.dot(u, w)) / (nu * nw) < 0.3:
+            segs.append([b])
+        else:
+            segs[-1].append(b)
+    if len(pts) > 1:
+        segs[-1].append(pts[-1])
+    return segs
+
+
+def _plausible(seg: list[tuple[float, float, float]], min_move: float = 30.0) -> bool:
+    if len(seg) < 8 or seg[-1][0] - seg[0][0] < 1.5:
+        return False
+    net = float(np.hypot(seg[-1][1] - seg[0][1], seg[-1][2] - seg[0][2]))
+    path = sum(float(np.hypot(b[1] - a[1], b[2] - a[2])) for a, b in zip(seg, seg[1:]))
+    return net >= min_move and path > 0 and net / path >= 0.8
+
+
+def _smooth(seg: list[tuple[float, float, float]], every_s: float = 0.25) -> list[tuple[float, float, float]]:
+    """3-point moving average, then thinned to one point per `every_s` (always keeping the last)."""
+    xs = np.convolve([p[1] for p in seg], np.ones(3) / 3, mode="same")
+    ys = np.convolve([p[2] for p in seg], np.ones(3) / 3, mode="same")
+    xs[0], ys[0], xs[-1], ys[-1] = seg[0][1], seg[0][2], seg[-1][1], seg[-1][2]
+    out, last_t = [], None
+    for k, (t, _, _) in enumerate(seg):
+        if last_t is None or t - last_t >= every_s - 1e-9 or k == len(seg) - 1:
+            out.append((round(t, 3), round(float(xs[k]), 1), round(float(ys[k]), 1)))
+            last_t = t
+    return out
