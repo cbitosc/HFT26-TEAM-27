@@ -1,16 +1,9 @@
 """Module 2 — Evidence extraction & normalisation (witness .txt, sensor .csv).
 
-Owner builds: Featherless LLM extraction for witness statements, Pandas
-normalisation for sensor CSVs. Both must emit the common Observation schema.
+Featherless LLM extraction for witness statements (witness.py), Pandas
+normalisation for sensor CSVs (sensor.py). Both emit the common Observation schema.
 """
-from app.schemas import Evidence, ObservationSet
+from app.modules.extraction.sensor import extract_sensor
+from app.modules.extraction.witness import extract_witness
 
-
-def extract_witness(evidence: Evidence) -> ObservationSet:
-    """Vehicles, actions, relative ordering, approximate times, uncertainty."""
-    raise NotImplementedError("witness extraction not built yet")
-
-
-def extract_sensor(evidence: Evidence) -> ObservationSet:
-    """Parse timestamps, normalise speed units, flag missing records."""
-    raise NotImplementedError("sensor extraction not built yet")
+__all__ = ["extract_sensor", "extract_witness"]
