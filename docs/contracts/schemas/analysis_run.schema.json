@@ -10,6 +10,7 @@
           "enum": [
             "real",
             "fixture",
+            "skipped",
             "error"
           ],
           "title": "Status",

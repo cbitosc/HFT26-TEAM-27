@@ -277,3 +277,16 @@ Still open: issue 3 (no collision inferred from sensor-only evidence) was left a
 Result on the example dataset: both CSV stages `real` (frame index: 0 observations; motion proxy: spikes at t=24 s in view 3, z=2.8, and t=45 s in view 1, z=2.7). Timeline, contradictions and reconstruction ran without error. `pytest` **87 passed**. No console errors on the dashboard.
 
 **Still open:** the video stage has no `FEATHERLESS_API_KEY`, so it serves `fixtures/video_observations.json`, the made-up Gachibowli V1/V2 collision. The timeline for this real dataset therefore mixes demo events (t=0–11.5 s) with the real motion spikes, and the reconstruction shows the demo collision.
+
+## 2026-10-30 · Fix: demo fixtures no longer mixed into runs on real evidence
+
+With real uploads, any stage that couldn't run (no Featherless key, unbuilt, or failed) used to serve its demo fixture. The example dataset's timeline therefore showed the made-up V1/V2 collision next to its real motion spikes.
+
+| File | Change |
+| --- | --- |
+| `src/backend/app/pipeline.py` | Two modes. **Demo** (no evidence uploaded): unchanged, stages fall back to fixtures. **Live** (evidence uploaded): a stage raising `NotImplementedError` is `skipped`, one that fails is `error`, and neither contributes data. An extractor adds no observation set; stages 3–5 get an empty `Timeline` / `ConflictReport` / `Reconstruction` (`_empty`). Stage messages say "served demo fixture" or "no output" |
+| `src/backend/app/schemas.py` | `StageResult.status` gains `"skipped"`. Additive contract change, so `SCHEMA_VERSION` 1.0.0 → 1.0.1. JSON schemas re-exported (`docs/contracts/schemas/`) |
+| `src/frontend/src/components/EvidenceManager.jsx` | Amber badge for `skipped`. With uploads, the hint reads "Results use only your evidence; stages that can't run are skipped." |
+| `tests/test_api.py` | The upload test now asserts live mode: witness `skipped` (no key), junk CSV `error`, no `fixture` status, and empty observations/timeline/conflicts/reconstruction |
+
+Checked: modules 3–5 accept empty input (0 events, 0 conflicts, 0 vehicles). `pytest` **87 passed**, frontend build OK. Example dataset rerun in the dashboard: video `skipped`, both CSVs `real`, timeline has only the two motion spikes (t=24 s, t=45 s), 0 conflicts, no vehicles or collision, no console errors.

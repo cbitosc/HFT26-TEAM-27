@@ -1,10 +1,14 @@
 """Runs modules 1→5 in architecture order.
 
-Walking-skeleton rule: every stage calls the real module first. If the module
-raises NotImplementedError, the stage serves its fixture instead and is
-reported as status="fixture". Building a module therefore needs no change
-here — once it stops raising, its output flows through and the dashboard
-shows the stage as "real".
+Every stage calls the real module first. What happens when it can't produce
+output (raises NotImplementedError, e.g. no Featherless key, or fails) depends
+on the mode:
+
+* demo mode (no evidence uploaded): the stage serves its fixture, status "fixture",
+  so the dashboard always has the demo incident to show.
+* live mode (evidence uploaded): the stage is "skipped" (or "error") and contributes
+  nothing; downstream stages get an empty result. Demo data is never mixed into
+  results for real evidence.
 """
 from __future__ import annotations
 
@@ -13,7 +17,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Callable
 
-from app import store
+from app import config, store
 from app.modules.contradictions import detect_conflicts
 from app.modules.extraction import extract_sensor, extract_witness
 from app.modules.ingestion import analyze_video
@@ -25,6 +29,7 @@ from app.schemas import (
     Evidence,
     ObservationSet,
     Reconstruction,
+    Scene,
     SourceType,
     StageResult,
     Timeline,
@@ -43,38 +48,46 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _run_stage(stage: str, fn: Callable, args: tuple, fixture: str, model, results: list[StageResult]):
+def _empty(model):
+    """Placeholder result for a stage that produced nothing in live mode."""
+    common = {"incident_id": config.INCIDENT_ID, "generated_at": _now()}
+    if model is Timeline:
+        return Timeline(**common, reference_time=config.INCIDENT_REFERENCE_TIME, events=[])
+    if model is ConflictReport:
+        return ConflictReport(**common, conflicts=[])
+    if model is Reconstruction:
+        return Reconstruction(**common, scene=Scene(extent_m=60, lane_width_m=3.5), t_min_s=0.0, t_max_s=0.0,
+                              vehicles=[], collision=None)
+    return None
+
+
+def _run_stage(stage: str, fn: Callable, args: tuple, fixture: str, model, results: list[StageResult], demo: bool):
+    """Returns the module's output, else the fixture (demo mode) or an empty result / None (live mode)."""
+    fallback = "served demo fixture" if demo else "no output"
     try:
         out = fn(*args)
         results.append(StageResult(stage=stage, status="real"))
         return out
     except NotImplementedError as e:
-        results.append(StageResult(stage=stage, status="fixture", message=str(e)))
-    except Exception as e:  # a real module failed: keep the pipeline alive on its fixture
+        results.append(StageResult(stage=stage, status="fixture" if demo else "skipped", message=f"{e}; {fallback}"))
+    except Exception as e:  # a real module failed: keep the pipeline alive
         log.exception("stage %s failed", stage)
-        results.append(StageResult(stage=stage, status="error", message=f"{type(e).__name__}: {e}; served fixture"))
-    return store.load_fixture(fixture, model)
+        results.append(StageResult(stage=stage, status="error", message=f"{type(e).__name__}: {e}; {fallback}"))
+    return store.load_fixture(fixture, model) if demo else _empty(model)
 
 
 def _extract_all(evidence: list[Evidence], results: list[StageResult]) -> list[ObservationSet]:
-    sets: list[ObservationSet] = []
-    fixture_served: set[SourceType] = set()
-    # No uploads yet -> demo mode: one pass per source type using bundled fixtures.
-    kinds = [e.kind for e in evidence] or list(EXTRACTORS)
-    items: list[Evidence | None] = list(evidence) or [None] * len(kinds)
-
-    for kind, ev in zip(kinds, items):
-        stage, fn, fixture = EXTRACTORS[kind]
-        if ev is None:
+    if not evidence:  # demo mode: one pass per source type using bundled fixtures
+        for stage, _fn, fixture in EXTRACTORS.values():
             results.append(StageResult(stage=stage, status="fixture", message="no evidence uploaded; demo fixture"))
-            sets.append(store.load_fixture(fixture, ObservationSet))
-            continue
-        before = len(results)
-        out = _run_stage(f"{stage} [{ev.filename}]", fn, (ev,), fixture, ObservationSet, results)
-        if results[before].status == "real" or kind not in fixture_served:
+        return [store.load_fixture(fixture, ObservationSet) for _s, _f, fixture in EXTRACTORS.values()]
+
+    sets: list[ObservationSet] = []
+    for ev in evidence:
+        stage, fn, fixture = EXTRACTORS[ev.kind]
+        out = _run_stage(f"{stage} [{ev.filename}]", fn, (ev,), fixture, ObservationSet, results, demo=False)
+        if out is not None:
             sets.append(out)
-        if results[before].status != "real":
-            fixture_served.add(kind)  # same fixture would just duplicate observations
     return sets
 
 
@@ -82,13 +95,15 @@ def run_analysis() -> AnalysisRun:
     started = _now()
     results: list[StageResult] = []
     evidence = store.list_evidence()
+    demo = not evidence
 
     observation_sets = _extract_all(evidence, results)
-    timeline = _run_stage("3. timeline", build_timeline, (observation_sets,), "timeline.json", Timeline, results)
+    timeline = _run_stage("3. timeline", build_timeline, (observation_sets,), "timeline.json", Timeline,
+                          results, demo)
     conflicts = _run_stage("4. contradictions", detect_conflicts, (observation_sets, timeline),
-                           "conflicts.json", ConflictReport, results)
+                           "conflicts.json", ConflictReport, results, demo)
     recon = _run_stage("5. reconstruction", build_reconstruction, (observation_sets, timeline, conflicts),
-                       "reconstruction.json", Reconstruction, results)
+                       "reconstruction.json", Reconstruction, results, demo)
 
     run = AnalysisRun(run_id=uuid.uuid4().hex[:8], started_at=started, finished_at=_now(),
                       evidence_count=len(evidence), stages=results)

@@ -1,6 +1,7 @@
 """Walking skeleton: API serves fixtures end to end, before any module is built."""
 from fastapi.testclient import TestClient
 
+from app import config
 from app.main import app
 
 client = TestClient(app)
@@ -28,18 +29,25 @@ def test_demo_run_without_evidence_uses_fixtures():
     assert client.get("/api/analysis/latest").json()["run_id"] == run["run_id"]
 
 
-def test_upload_list_delete_and_run():
+def test_upload_list_delete_and_run(monkeypatch):
     r = client.post("/api/evidence", files={"file": ("w.txt", b"I saw a red car.", "text/plain")})
     assert r.status_code == 201 and r.json()["kind"] == "witness"
     ev_id = r.json()["id"]
     client.post("/api/evidence", files={"file": ("s.csv", b"a,b\n1,2\n", "text/csv")})
     assert len(client.get("/api/evidence").json()) == 2
 
+    monkeypatch.setattr(config, "FEATHERLESS_API_KEY", "")
     run = client.post("/api/analysis/run").json()
     assert run["evidence_count"] == 2
-    # one observation set per source type actually uploaded (fixture-backed for now)
-    kinds = sorted(s["source_type"] for s in client.get("/api/observations").json())
-    assert kinds == ["sensor", "witness"]
+    statuses = {s["stage"]: s["status"] for s in run["stages"]}
+    # live mode: no key -> witness skipped; junk CSV -> error; neither falls back to demo data
+    assert statuses["2. extraction.witness [w.txt]"] == "skipped"
+    assert statuses["2. extraction.sensor [s.csv]"] == "error"
+    assert "fixture" not in statuses.values()
+    assert client.get("/api/observations").json() == []
+    assert client.get("/api/timeline").json()["events"] == []
+    assert client.get("/api/conflicts").json()["conflicts"] == []
+    assert client.get("/api/reconstruction").json()["vehicles"] == []
 
     assert client.delete(f"/api/evidence/{ev_id}").status_code == 204
     assert client.delete(f"/api/evidence/{ev_id}").status_code == 404

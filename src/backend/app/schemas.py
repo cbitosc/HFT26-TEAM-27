@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.0.1"
 
 
 # ---------------------------------------------------------------- evidence
@@ -177,7 +177,7 @@ class Reconstruction(BaseModel):
 
 class StageResult(BaseModel):
     stage: str
-    status: Literal["real", "fixture", "error"]
+    status: Literal["real", "fixture", "skipped", "error"]
     message: str = ""
 
 

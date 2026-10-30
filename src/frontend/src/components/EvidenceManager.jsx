@@ -5,6 +5,7 @@ import Panel, { SourceBadge } from './Panel'
 const STATUS_STYLES = {
   real: 'bg-emerald-100 text-emerald-800',
   fixture: 'bg-slate-100 text-slate-600',
+  skipped: 'bg-amber-100 text-amber-800',
   error: 'bg-red-100 text-red-700',
 }
 
@@ -56,7 +57,9 @@ export default function EvidenceManager({ run, onAnalysisDone }) {
       </label>
 
       <ul className="mt-3 space-y-1.5">
-        {evidence.length === 0 && <li className="text-xs text-slate-400">No evidence uploaded — analysis runs on demo fixtures.</li>}
+        {evidence.length === 0
+          ? <li className="text-xs text-slate-400">No evidence uploaded — analysis runs on demo fixtures.</li>
+          : <li className="text-xs text-slate-400">Results use only your evidence; stages that can't run are skipped.</li>}
         {evidence.map((e) => (
           <li key={e.id} className="flex items-center gap-2 text-sm">
             <SourceBadge type={e.kind} />
