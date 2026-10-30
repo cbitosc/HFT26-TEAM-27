@@ -27,6 +27,7 @@ Report only what is visible. Answer with ONE JSON object and nothing else, using
   "ego": {"action": "moving|braking|stopped|turning|accelerating|entering_intersection|crossing_intersection",
           "cue": "what in the frame shows this", "confidence": 0.0-1.0} or null,
   "vehicles": [{"label": "short stable name, colour + type, e.g. 'white SUV'",
+                "box": [x1, y1, x2, y2] (the vehicle in the image, 0-1000),
                 "description": "one short sentence",
                 "action": "moving|braking|stopped|turning|accelerating|entering_intersection|crossing_intersection",
                 "direction": "where it comes from / goes, e.g. 'from left (west), eastbound'",

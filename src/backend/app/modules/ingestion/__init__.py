@@ -32,9 +32,9 @@ from typing import Callable
 from app import config
 from app.schemas import Evidence, Observation, ObservationSet, SourceRef, SourceType
 
-from .video import (MOVING_CAMERA_SHARE, Frame, Track, VideoInfo, camera_motion_share, detect_grid,
-                    encode_jpeg_b64, extract_frames, probe_video, select_keyframes, static_regions, track_vehicles,
-                    with_followers)
+from .video import (MOVING_CAMERA_SHARE, Frame, Track, VideoInfo, camera_motion_share, detect_grid, ego_events,
+                    ego_motion, encode_jpeg_b64, extract_frames, probe_video, select_keyframes, static_regions,
+                    track_vehicles, with_followers)
 from . import calibration
 from .vision import PROMPTS, CameraMode, FrameAnalysis, VisionClient, VisionError
 
@@ -54,6 +54,7 @@ def ego_vehicle_id() -> str:
 MIN_CONFIDENCE = 0.2
 CAMERA_MODE = os.environ.get("VIDEO_CAMERA_MODE", "auto").strip().lower()
 TRACKING = os.environ.get("VIDEO_TRACKING", "1") != "0"  # fixed cameras: OpenCV motion tracks
+EGO_MOTION = os.environ.get("VIDEO_EGO_MOTION", "1") != "0"  # dashcams: optical-flow ego motion
 MAX_TRACKS = int(os.environ.get("VIDEO_MAX_TRACKS", "200"))
 PAIR_GAP_S = float(os.environ.get("VIDEO_PAIR_GAP_S", "1.0"))  # fixed cameras: second image this much later
 # Fixed cameras: the model often misreads flowing traffic as "stopped", so every stopped vehicle must
@@ -148,14 +149,23 @@ def analyze_video(evidence: Evidence, client: VisionClient | None = None,
                 warnings.append(f"Camera view {v} not calibrated: {cal.reason}. Speeds unavailable; set a manual "
                                 f"calibration with PUT /api/evidence/{evidence.id}/calibration/{v}.")
 
+    # Dashcams: the camera car's own motion from optical flow (OpenCV only, no model, no key).
+    ego_obs: list[Observation] = []
+    if mode == "dashcam" and EGO_MOTION:
+        report(0, 0, "measuring ego motion")
+        ego_obs = ego_to_observations(evidence, info, ego_events(ego_motion(evidence.stored_path, info)))
+        warnings.append(f"Ego motion of {ego_vehicle_id()} from optical flow: {len(ego_obs)} change(s). Relative "
+                        "(no camera calibration): moving / braking / stopped / turning, not km/h.")
+    coverage = (round(T0_OFFSET_S, 3), round(T0_OFFSET_S + info.duration_s, 3))
+
     if client is None:
         if not config.FEATHERLESS_API_KEY:
-            if track_obs:
-                warnings.append("FEATHERLESS_API_KEY is not set: vehicle tracks only, no vision-model findings.")
+            if track_obs or ego_obs:
+                warnings.append("FEATHERLESS_API_KEY is not set: motion analysis only, no vision-model findings.")
                 return ObservationSet(source_type=SourceType.video, evidence_id=evidence.id,
-                                      producer="evidence_ingestion:opencv-tracking",
-                                      generated_at=datetime.now(timezone.utc), observations=track_obs,
-                                      warnings=warnings)
+                                      producer="evidence_ingestion:opencv",
+                                      generated_at=datetime.now(timezone.utc), observations=track_obs + ego_obs,
+                                      warnings=warnings, coverage_s=coverage)
             raise NotImplementedError(
                 f"video valid ({info.frame_count} frames @ {info.fps:.1f} fps, {len(frames)} sampled) "
                 "but FEATHERLESS_API_KEY is not set; no vision analysis"
@@ -214,7 +224,9 @@ def analyze_video(evidence: Evidence, client: VisionClient | None = None,
         if dropped["transient"]:
             warnings.append(f"{dropped['transient']} momentary claim(s) (braking, lane changes, swerves) dropped: "
                             "they can't be judged reliably from keyframes seconds apart.")
-    observations = frames_to_observations(evidence, info, analysed, mode, persistence) + track_obs
+    observations = frames_to_observations(evidence, info, analysed, mode, persistence) + track_obs + ego_obs
+    if mode == "dashcam":
+        observations += box_tracks(evidence, info, analysed)
     return ObservationSet(
         source_type=SourceType.video,
         evidence_id=evidence.id,
@@ -222,7 +234,60 @@ def analyze_video(evidence: Evidence, client: VisionClient | None = None,
         generated_at=datetime.now(timezone.utc),
         observations=observations,
         warnings=warnings,
+        coverage_s=coverage,
     )
+
+
+def ego_to_observations(evidence: Evidence, info: VideoInfo, events: list[dict]) -> list[Observation]:
+    out = []
+    for n, e in enumerate(events, start=1):
+        t = round(e["t"] + T0_OFFSET_S, 3)
+        attrs = {k: v for k, v in e.items() if k not in ("t", "action")} | {"ego": True, "method": "optical flow"}
+        out.append(Observation(
+            id=f"vid_{evidence.id}_ego_{n:03d}", source_type=SourceType.video,
+            source_ref=SourceRef(evidence_id=evidence.id, file=evidence.filename,
+                                 locator=f"frame:{round(e['t'] * info.fps)}"),
+            timestamp=config.INCIDENT_REFERENCE_TIME + timedelta(seconds=t), t_rel_s=t,
+            time_uncertainty_s=0.3, vehicle_id=ego_vehicle_id(), vehicle_description="camera vehicle (dashcam)",
+            action=e["action"], attributes=attrs, basis="derived",
+            confidence=0.75 if e["action"] in ("braking", "stopped", "moving") else 0.6))
+    return out
+
+
+def box_tracks(evidence: Evidence, info: VideoInfo, analysed: list[tuple[Frame, FrameAnalysis]],
+               max_jump: float = 180.0, max_gap_s: float = 3.0) -> list[Observation]:
+    """Dashcams: link the vision model's boxes for the same-looking vehicle across keyframes into coarse
+    image-space tracks (camera-relative: the camera itself moves). Basis "inferred": the boxes are a model's."""
+    tracks: list[dict] = []
+    for frame, a in sorted(analysed, key=lambda fa: fa[0].t_s):
+        for v in a.vehicles:
+            if not v.box or v.confidence < MIN_CONFIDENCE:
+                continue
+            cx, cy = (v.box[0] + v.box[2]) / 2, (v.box[1] + v.box[3]) / 2
+            best = min((tr for tr in tracks if tr["key"] == _key(v.label) and frame.t_s - tr["pts"][-1][0] <= max_gap_s
+                        and math.hypot(cx - tr["pts"][-1][1], cy - tr["pts"][-1][2]) <= max_jump),
+                       key=lambda tr: math.hypot(cx - tr["pts"][-1][1], cy - tr["pts"][-1][2]), default=None)
+            if best is None:
+                best = {"key": _key(v.label), "label": v.label, "pts": [], "first": frame.index}
+                tracks.append(best)
+            best["pts"].append((frame.t_s, cx, cy))
+            best["last"] = frame.index
+    out = []
+    for n, tr in enumerate((tr for tr in tracks if len(tr["pts"]) >= 2), start=1):
+        pts = [[round(t + T0_OFFSET_S, 3), round(x / 1000 * info.width, 1), round(y / 1000 * info.height, 1)]
+               for t, x, y in tr["pts"]]
+        out.append(Observation(
+            id=f"vid_{evidence.id}_box_{n:03d}", source_type=SourceType.video,
+            source_ref=SourceRef(evidence_id=evidence.id, file=evidence.filename,
+                                 locator=f"frames:{tr['first']}-{tr['last']}"),
+            timestamp=config.INCIDENT_REFERENCE_TIME + timedelta(seconds=pts[0][0]), t_rel_s=pts[0][0],
+            time_uncertainty_s=0.5, vehicle_description=tr["label"], action="track", basis="inferred",
+            attributes={"track_id": f"T1-{n:03d}", "view": 1, "camera": "dashcam", "units": "px",
+                        "frame_size": [info.width, info.height], "fps": round(info.fps, 3),
+                        "view_box": [0, 0, info.width, info.height], "grid": [[0, 0, info.width, info.height]],
+                        "label": tr["label"], "points": pts},
+            confidence=0.5))
+    return out
 
 
 def calibration_key(evidence: Evidence) -> str:

@@ -106,6 +106,9 @@ def test_sample_indices_capped():
 
 
 def test_no_key_validates_then_falls_back(video, monkeypatch):
+    # With the key-free analyses (fixed-camera tracking, dashcam ego motion) off, nothing can be learned.
+    monkeypatch.setattr(ingestion, "EGO_MOTION", False)
+    monkeypatch.setattr(ingestion, "TRACKING", False)
     monkeypatch.setattr(config, "FEATHERLESS_API_KEY", "")
     with pytest.raises(NotImplementedError, match="60 frames"):
         analyze_video(_evidence(video))

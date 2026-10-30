@@ -379,3 +379,113 @@ def _smooth(seg: list[tuple[float, float, float]], every_s: float = 0.25) -> lis
             out.append((round(t, 3), round(float(xs[k]), 1), round(float(ys[k]), 1)))
             last_t = t
     return out
+
+
+# ------------------------------------------------------------------ dashcam ego motion
+
+@dataclass
+class EgoSample:
+    t: float
+    forward: float   # radial expansion of the road ahead, px/s (relative forward speed)
+    lateral: float   # median horizontal flow, px/s (+ = scene moves right = turning left)
+    pitch: float     # median vertical flow in the upper image, px/s (jolts: hard braking, impacts)
+
+
+def ego_motion(path: str, info: VideoInfo, sample_fps: float = 5.0, width: int = 320) -> list[EgoSample]:
+    """Relative ego motion of a forward-facing camera from dense optical flow (no calibration).
+
+    Forward motion makes the road expand away from a point ahead (assumed at the image centre,
+    45 % down); its median radial flow in the lower image is proportional to speed / distance.
+    It is a relative measure: comparable within one clip, not km/h.
+    """
+    step = max(1, round(info.fps / sample_fps))
+    cap = cv2.VideoCapture(path)
+    out: list[EgoSample] = []
+    prev = None
+    radial = None
+    try:
+        idx = 0
+        while True:
+            if not cap.grab():
+                break
+            # Flow between ADJACENT frames at each sample time: frames further apart move the near road
+            # by metres, beyond what dense flow can match.
+            if idx % step == 0 or idx % step == step - 1:
+                ok, frame = cap.retrieve()
+                if not ok:
+                    break
+                g = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                h = round(g.shape[0] * width / g.shape[1])
+                g = cv2.resize(g, (width, h), interpolation=cv2.INTER_AREA)
+                if idx % step != 0:  # the frame just before a sample
+                    prev = g
+                    idx += 1
+                    continue
+                if radial is None:
+                    yy, xx = np.mgrid[0:h, 0:width].astype(np.float32)
+                    dx, dy = xx - width / 2, yy - 0.45 * h
+                    norm = np.hypot(dx, dy) + 1e-6
+                    radial = (dx / norm, dy / norm)
+                    # A band of road ahead (roughly 5-30 m for a typical dashcam): close enough to show motion,
+                    # far enough that per-frame displacement stays within what dense flow can match.
+                    road = (yy > 0.5 * h) & (yy < 0.75 * h)
+                    upper = yy < 0.35 * h
+                if prev is not None:
+                    flow = cv2.calcOpticalFlowFarneback(prev, g, None, 0.5, 4, 21, 3, 5, 1.2, 0)
+                    dt = 1 / info.fps
+                    expand = flow[..., 0] * radial[0] + flow[..., 1] * radial[1]
+                    out.append(EgoSample(t=round(idx / info.fps, 3),
+                                         forward=float(np.median(expand[road])) / dt,
+                                         lateral=float(np.median(flow[..., 0][road])) / dt,
+                                         pitch=float(np.median(flow[..., 1][upper])) / dt))
+                prev = g if step == 1 else None
+            idx += 1
+    finally:
+        cap.release()
+    return out
+
+
+def ego_events(samples: list[EgoSample]) -> list[dict]:
+    """Moving / braking / stopped / turning / jolt moments from the ego-motion series (relative thresholds)."""
+    if len(samples) < 5:
+        return []
+    fwd = np.array([max(0.0, s.forward) for s in samples])
+    fwd = np.convolve(fwd, np.ones(3) / 3, mode="same")
+    peak = float(np.percentile(fwd, 90)) or 1e-6
+    stopped_level, moving_level = 0.12 * peak, 0.35 * peak
+    ts = [s.t for s in samples]
+    out = []
+    state = "moving" if fwd[0] > moving_level else "stopped"
+    out.append({"t": ts[0], "action": state, "forward": round(float(fwd[0]), 1), "relative": round(float(fwd[0] / peak), 2)})
+    braking_from = None
+    for i in range(1, len(samples)):
+        # braking: sustained drop to < 60 % of the level 1 s earlier, while still moving
+        j = max(0, i - round(1.0 / max(ts[1] - ts[0], 1e-6)))
+        if state == "moving" and braking_from is None and fwd[j] > moving_level and fwd[i] < 0.6 * fwd[j]:
+            braking_from = i
+            out.append({"t": ts[j], "action": "braking", "forward": round(float(fwd[j]), 1),
+                        "relative": round(float(fwd[i] / fwd[j]), 2)})
+        if state == "moving" and fwd[i] < stopped_level:
+            state = "stopped"
+            out.append({"t": ts[i], "action": "stopped", "forward": round(float(fwd[i]), 1), "relative": 0.0})
+        elif state == "stopped" and fwd[i] > moving_level:
+            state, braking_from = "moving", None
+            out.append({"t": ts[i], "action": "moving", "forward": round(float(fwd[i]), 1),
+                        "relative": round(float(fwd[i] / peak), 2)})
+        if braking_from is not None and fwd[i] > 0.9 * fwd[braking_from - 1 if braking_from else 0]:
+            braking_from = None  # recovered: a later drop is a new braking
+    pitch = np.array([s.pitch for s in samples])
+    med = float(np.median(pitch))
+    mad = float(np.median(np.abs(pitch - med))) * 1.4826 or 1e-6
+    for i in np.where(np.abs(pitch - med) / mad > 6)[0]:
+        if abs(pitch[i] - med) > 0.05 * peak:  # ignore jitter on a near-static clip
+            out.append({"t": ts[i], "action": "sudden_jolt", "pitch": round(float(pitch[i]), 1),
+                        "robust_z": round(float(abs(pitch[i] - med) / mad), 1)})
+    lat = np.convolve([s.lateral for s in samples], np.ones(5) / 5, mode="same")
+    turning = None
+    for i, v in enumerate(lat):
+        side = "left" if v > 0.15 * peak else "right" if v < -0.15 * peak else None
+        if side and side != turning and fwd[i] > stopped_level:
+            out.append({"t": ts[i], "action": "turning", "direction": side})
+        turning = side
+    return sorted(out, key=lambda e: e["t"])
