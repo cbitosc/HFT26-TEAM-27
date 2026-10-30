@@ -1,0 +1,137 @@
+{
+  "schema_version": "1.0.0",
+  "source_type": "video",
+  "evidence_id": "ev_fx_dashcam",
+  "producer": "fixture:evidence_ingestion",
+  "generated_at": "2026-10-30T00:00:00Z",
+  "warnings": [
+    "Dashcam clock offset assumed 0 s relative to telematics (not verified).",
+    "Eastbound signal head not visible from ego camera."
+  ],
+  "observations": [
+    {
+      "id": "vid_001",
+      "source_type": "video",
+      "source_ref": {
+        "evidence_id": "ev_fx_dashcam",
+        "file": "dashcam_v1_front.mp4",
+        "locator": "frame:0"
+      },
+      "timestamp": "2026-10-12T17:42:00+05:30",
+      "t_rel_s": 0.0,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": null,
+      "vehicle_description": null,
+      "action": "signal_state",
+      "attributes": {
+        "approach": "NB",
+        "signal_state": "green"
+      },
+      "confidence": 0.85,
+      "raw_text": null
+    },
+    {
+      "id": "vid_002",
+      "source_type": "video",
+      "source_ref": {
+        "evidence_id": "ev_fx_dashcam",
+        "file": "dashcam_v1_front.mp4",
+        "locator": "frame:216"
+      },
+      "timestamp": "2026-10-12T17:42:07.200000+05:30",
+      "t_rel_s": 7.2,
+      "time_uncertainty_s": 0.2,
+      "vehicle_id": null,
+      "vehicle_description": null,
+      "action": "signal_state",
+      "attributes": {
+        "approach": "NB",
+        "signal_state": "yellow"
+      },
+      "confidence": 0.8,
+      "raw_text": null
+    },
+    {
+      "id": "vid_003",
+      "source_type": "video",
+      "source_ref": {
+        "evidence_id": "ev_fx_dashcam",
+        "file": "dashcam_v1_front.mp4",
+        "locator": "frame:273"
+      },
+      "timestamp": "2026-10-12T17:42:09.100000+05:30",
+      "t_rel_s": 9.1,
+      "time_uncertainty_s": 0.1,
+      "vehicle_id": "V2",
+      "vehicle_description": "white SUV, enters from left (west)",
+      "action": "entering_intersection",
+      "attributes": {
+        "direction": "eastbound"
+      },
+      "confidence": 0.8,
+      "raw_text": null
+    },
+    {
+      "id": "vid_004",
+      "source_type": "video",
+      "source_ref": {
+        "evidence_id": "ev_fx_dashcam",
+        "file": "dashcam_v1_front.mp4",
+        "locator": "frame:276"
+      },
+      "timestamp": "2026-10-12T17:42:09.200000+05:30",
+      "t_rel_s": 9.2,
+      "time_uncertainty_s": 0.3,
+      "vehicle_id": "V1",
+      "vehicle_description": "ego vehicle (dashcam host)",
+      "action": "braking",
+      "attributes": {
+        "cue": "forward pitch of horizon"
+      },
+      "confidence": 0.6,
+      "raw_text": null
+    },
+    {
+      "id": "vid_005",
+      "source_type": "video",
+      "source_ref": {
+        "evidence_id": "ev_fx_dashcam",
+        "file": "dashcam_v1_front.mp4",
+        "locator": "frame:300"
+      },
+      "timestamp": "2026-10-12T17:42:10+05:30",
+      "t_rel_s": 10.0,
+      "time_uncertainty_s": 0.05,
+      "vehicle_id": null,
+      "vehicle_description": null,
+      "action": "collision",
+      "attributes": {
+        "vehicles": [
+          "V1",
+          "V2"
+        ],
+        "impact_side": "V1 front-right / V2 left side"
+      },
+      "confidence": 0.9,
+      "raw_text": null
+    },
+    {
+      "id": "vid_006",
+      "source_type": "video",
+      "source_ref": {
+        "evidence_id": "ev_fx_dashcam",
+        "file": "dashcam_v1_front.mp4",
+        "locator": "frame:345"
+      },
+      "timestamp": "2026-10-12T17:42:11.500000+05:30",
+      "t_rel_s": 11.5,
+      "time_uncertainty_s": 0.3,
+      "vehicle_id": "V1",
+      "vehicle_description": "ego vehicle",
+      "action": "stopped",
+      "attributes": {},
+      "confidence": 0.7,
+      "raw_text": null
+    }
+  ]
+}

@@ -1,0 +1,197 @@
+{
+  "$defs": {
+    "Observation": {
+      "description": "The common observation schema shared by video, witness and sensor.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "source_type": {
+          "$ref": "#/$defs/SourceType"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "timestamp": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Absolute time if known",
+          "title": "Timestamp"
+        },
+        "t_rel_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds relative to incident reference time",
+          "title": "T Rel S"
+        },
+        "time_uncertainty_s": {
+          "default": 0.0,
+          "minimum": 0,
+          "title": "Time Uncertainty S",
+          "type": "number"
+        },
+        "vehicle_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Canonical id (V1, V2, ...) or null if unresolved",
+          "title": "Vehicle Id"
+        },
+        "vehicle_description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vehicle Description"
+        },
+        "action": {
+          "description": "e.g. moving, braking, entering_intersection, collision, signal_state, stopped",
+          "title": "Action",
+          "type": "string"
+        },
+        "attributes": {
+          "additionalProperties": true,
+          "description": "speed_kmh, heading_deg, signal_state, x_m, y_m, ...",
+          "title": "Attributes",
+          "type": "object"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "raw_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Verbatim quote for witness-derived observations",
+          "title": "Raw Text"
+        }
+      },
+      "required": [
+        "id",
+        "source_type",
+        "source_ref",
+        "action",
+        "confidence"
+      ],
+      "title": "Observation",
+      "type": "object"
+    },
+    "SourceRef": {
+      "description": "Where in the original evidence an observation came from.",
+      "properties": {
+        "evidence_id": {
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "file": {
+          "title": "File",
+          "type": "string"
+        },
+        "locator": {
+          "description": "frame:<n> | line:<n> | row:<n> | sentence:<n>",
+          "title": "Locator",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "file",
+        "locator"
+      ],
+      "title": "SourceRef",
+      "type": "object"
+    },
+    "SourceType": {
+      "enum": [
+        "video",
+        "witness",
+        "sensor"
+      ],
+      "title": "SourceType",
+      "type": "string"
+    }
+  },
+  "description": "Output of one extractor run over one piece of evidence.",
+  "properties": {
+    "schema_version": {
+      "default": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_type": {
+      "$ref": "#/$defs/SourceType"
+    },
+    "evidence_id": {
+      "title": "Evidence Id",
+      "type": "string"
+    },
+    "producer": {
+      "title": "Producer",
+      "type": "string"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "observations": {
+      "items": {
+        "$ref": "#/$defs/Observation"
+      },
+      "title": "Observations",
+      "type": "array"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "source_type",
+    "evidence_id",
+    "producer",
+    "generated_at",
+    "observations"
+  ],
+  "title": "ObservationSet",
+  "type": "object"
+}

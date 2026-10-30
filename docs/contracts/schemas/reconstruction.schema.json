@@ -1,0 +1,220 @@
+{
+  "$defs": {
+    "CollisionMarker": {
+      "properties": {
+        "t_s": {
+          "title": "T S",
+          "type": "number"
+        },
+        "x_m": {
+          "title": "X M",
+          "type": "number"
+        },
+        "y_m": {
+          "title": "Y M",
+          "type": "number"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "supporting_observation_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Supporting Observation Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "t_s",
+        "x_m",
+        "y_m",
+        "confidence",
+        "supporting_observation_ids"
+      ],
+      "title": "CollisionMarker",
+      "type": "object"
+    },
+    "Scene": {
+      "properties": {
+        "type": {
+          "const": "four_way_intersection",
+          "default": "four_way_intersection",
+          "title": "Type",
+          "type": "string"
+        },
+        "extent_m": {
+          "description": "Half-width of the square view around the origin",
+          "title": "Extent M",
+          "type": "number"
+        },
+        "lane_width_m": {
+          "title": "Lane Width M",
+          "type": "number"
+        },
+        "roads": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "axis -> road name, e.g. {'ns': 'Main Rd'}",
+          "title": "Roads",
+          "type": "object"
+        }
+      },
+      "required": [
+        "extent_m",
+        "lane_width_m"
+      ],
+      "title": "Scene",
+      "type": "object"
+    },
+    "TrackPoint": {
+      "properties": {
+        "t_s": {
+          "title": "T S",
+          "type": "number"
+        },
+        "x_m": {
+          "title": "X M",
+          "type": "number"
+        },
+        "y_m": {
+          "title": "Y M",
+          "type": "number"
+        },
+        "heading_deg": {
+          "title": "Heading Deg",
+          "type": "number"
+        },
+        "speed_kmh": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Speed Kmh"
+        }
+      },
+      "required": [
+        "t_s",
+        "x_m",
+        "y_m",
+        "heading_deg"
+      ],
+      "title": "TrackPoint",
+      "type": "object"
+    },
+    "VehicleTrack": {
+      "properties": {
+        "vehicle_id": {
+          "title": "Vehicle Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "color": {
+          "title": "Color",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "track": {
+          "items": {
+            "$ref": "#/$defs/TrackPoint"
+          },
+          "title": "Track",
+          "type": "array"
+        },
+        "source_observation_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Observation Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "vehicle_id",
+        "label",
+        "color",
+        "track"
+      ],
+      "title": "VehicleTrack",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "default": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "incident_id": {
+      "title": "Incident Id",
+      "type": "string"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "scene": {
+      "$ref": "#/$defs/Scene"
+    },
+    "t_min_s": {
+      "title": "T Min S",
+      "type": "number"
+    },
+    "t_max_s": {
+      "title": "T Max S",
+      "type": "number"
+    },
+    "vehicles": {
+      "items": {
+        "$ref": "#/$defs/VehicleTrack"
+      },
+      "title": "Vehicles",
+      "type": "array"
+    },
+    "collision": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CollisionMarker"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "incident_id",
+    "generated_at",
+    "scene",
+    "t_min_s",
+    "t_max_s",
+    "vehicles"
+  ],
+  "title": "Reconstruction",
+  "type": "object"
+}

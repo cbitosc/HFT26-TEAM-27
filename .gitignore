@@ -1,0 +1,17 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Runtime data (uploads + pipeline outputs)
+storage/
+
+# Frontend
+node_modules/
+dist/
+
+# Secrets
+.env
+
+.DS_Store

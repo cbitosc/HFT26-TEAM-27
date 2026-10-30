@@ -1,0 +1,285 @@
+{
+  "schema_version": "1.0.0",
+  "source_type": "witness",
+  "evidence_id": "ev_fx_witness_bundle",
+  "producer": "fixture:extraction.witness",
+  "generated_at": "2026-10-30T00:00:00Z",
+  "warnings": [
+    "W1 and W2 give no absolute times for individual actions; ordering is relative.",
+    "W2 vehicle type for V2 ambiguous (SUV or van)."
+  ],
+  "observations": [
+    {
+      "id": "wit_w1_01",
+      "source_type": "witness",
+      "source_ref": {
+        "evidence_id": "ev_fx_w1",
+        "file": "witness_01_pedestrian.txt",
+        "locator": "line:7"
+      },
+      "timestamp": "2026-10-12T17:40:00+05:30",
+      "t_rel_s": null,
+      "time_uncertainty_s": 300,
+      "vehicle_id": null,
+      "vehicle_description": null,
+      "action": "collision",
+      "attributes": {
+        "vehicles": [
+          "V1",
+          "V2"
+        ],
+        "clock_time": "17:40"
+      },
+      "confidence": 0.5,
+      "raw_text": "around 5:40 in the evening"
+    },
+    {
+      "id": "wit_w1_02",
+      "source_type": "witness",
+      "source_ref": {
+        "evidence_id": "ev_fx_w1",
+        "file": "witness_01_pedestrian.txt",
+        "locator": "line:10"
+      },
+      "timestamp": null,
+      "t_rel_s": null,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": "V1",
+      "vehicle_description": "red sedan",
+      "action": "signal_state",
+      "attributes": {
+        "approach": "NB",
+        "signal_state": "green",
+        "order": 1
+      },
+      "confidence": 0.6,
+      "raw_text": "its light was green when it was approaching"
+    },
+    {
+      "id": "wit_w1_03",
+      "source_type": "witness",
+      "source_ref": {
+        "evidence_id": "ev_fx_w1",
+        "file": "witness_01_pedestrian.txt",
+        "locator": "line:11"
+      },
+      "timestamp": null,
+      "t_rel_s": null,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": "V2",
+      "vehicle_description": "big white SUV",
+      "action": "moving",
+      "attributes": {
+        "direction": "eastbound",
+        "speed_kmh": 80,
+        "speed_qualifier": "at least",
+        "order": 2
+      },
+      "confidence": 0.5,
+      "raw_text": "really fast, I would say at least 80 km/h"
+    },
+    {
+      "id": "wit_w1_04",
+      "source_type": "witness",
+      "source_ref": {
+        "evidence_id": "ev_fx_w1",
+        "file": "witness_01_pedestrian.txt",
+        "locator": "line:11"
+      },
+      "timestamp": null,
+      "t_rel_s": null,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": "V2",
+      "vehicle_description": "white SUV",
+      "action": "no_braking",
+      "attributes": {
+        "order": 3
+      },
+      "confidence": 0.6,
+      "raw_text": "The SUV did not slow down at all"
+    },
+    {
+      "id": "wit_w1_05",
+      "source_type": "witness",
+      "source_ref": {
+        "evidence_id": "ev_fx_w1",
+        "file": "witness_01_pedestrian.txt",
+        "locator": "line:12"
+      },
+      "timestamp": null,
+      "t_rel_s": null,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": "V1",
+      "vehicle_description": "red car",
+      "action": "braking",
+      "attributes": {
+        "order": 4,
+        "cue": "heard brakes"
+      },
+      "confidence": 0.7,
+      "raw_text": "The red car tried to stop, I heard the brakes"
+    },
+    {
+      "id": "wit_w1_06",
+      "source_type": "witness",
+      "source_ref": {
+        "evidence_id": "ev_fx_w1",
+        "file": "witness_01_pedestrian.txt",
+        "locator": "line:13"
+      },
+      "timestamp": null,
+      "t_rel_s": null,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": null,
+      "vehicle_description": null,
+      "action": "collision",
+      "attributes": {
+        "vehicles": [
+          "V1",
+          "V2"
+        ],
+        "location": "middle of the junction",
+        "order": 5
+      },
+      "confidence": 0.85,
+      "raw_text": "they hit in the middle of the junction"
+    },
+    {
+      "id": "wit_w1_07",
+      "source_type": "witness",
+      "source_ref": {
+        "evidence_id": "ev_fx_w1",
+        "file": "witness_01_pedestrian.txt",
+        "locator": "line:13"
+      },
+      "timestamp": null,
+      "t_rel_s": null,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": null,
+      "vehicle_description": null,
+      "action": "post_collision_slide",
+      "attributes": {
+        "vehicles": [
+          "V1",
+          "V2"
+        ],
+        "distance_m_est": 3,
+        "order": 6
+      },
+      "confidence": 0.6,
+      "raw_text": "Both cars slid a few metres"
+    },
+    {
+      "id": "wit_w2_01",
+      "source_type": "witness",
+      "source_ref": {
+        "evidence_id": "ev_fx_w2",
+        "file": "witness_02_shopkeeper.txt",
+        "locator": "line:7"
+      },
+      "timestamp": "2026-10-12T17:45:00+05:30",
+      "t_rel_s": null,
+      "time_uncertainty_s": 120,
+      "vehicle_id": null,
+      "vehicle_description": null,
+      "action": "collision",
+      "attributes": {
+        "vehicles": [
+          "V1",
+          "V2"
+        ],
+        "clock_time": "17:45"
+      },
+      "confidence": 0.5,
+      "raw_text": "at about quarter to six"
+    },
+    {
+      "id": "wit_w2_02",
+      "source_type": "witness",
+      "source_ref": {
+        "evidence_id": "ev_fx_w2",
+        "file": "witness_02_shopkeeper.txt",
+        "locator": "line:8"
+      },
+      "timestamp": null,
+      "t_rel_s": null,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": "V1",
+      "vehicle_description": "red car",
+      "action": "signal_state",
+      "attributes": {
+        "approach": "NB",
+        "signal_state": "yellow",
+        "order": 1
+      },
+      "confidence": 0.7,
+      "raw_text": "The light for Main Road had already turned yellow"
+    },
+    {
+      "id": "wit_w2_03",
+      "source_type": "witness",
+      "source_ref": {
+        "evidence_id": "ev_fx_w2",
+        "file": "witness_02_shopkeeper.txt",
+        "locator": "line:8"
+      },
+      "timestamp": null,
+      "t_rel_s": null,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": "V1",
+      "vehicle_description": "red car",
+      "action": "accelerating",
+      "attributes": {
+        "order": 2,
+        "claim": "sped up to beat the light"
+      },
+      "confidence": 0.6,
+      "raw_text": "The red car sped up to beat the light"
+    },
+    {
+      "id": "wit_w2_04",
+      "source_type": "witness",
+      "source_ref": {
+        "evidence_id": "ev_fx_w2",
+        "file": "witness_02_shopkeeper.txt",
+        "locator": "line:9"
+      },
+      "timestamp": null,
+      "t_rel_s": null,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": "V2",
+      "vehicle_description": "white SUV or van",
+      "action": "moving",
+      "attributes": {
+        "direction": "eastbound",
+        "vehicle_type_alternatives": [
+          "SUV",
+          "van"
+        ]
+      },
+      "confidence": 0.5,
+      "raw_text": "I think it was an SUV or maybe a van"
+    },
+    {
+      "id": "wit_w2_05",
+      "source_type": "witness",
+      "source_ref": {
+        "evidence_id": "ev_fx_w2",
+        "file": "witness_02_shopkeeper.txt",
+        "locator": "line:11"
+      },
+      "timestamp": null,
+      "t_rel_s": null,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": "V1",
+      "vehicle_description": "red car",
+      "action": "entering_intersection",
+      "attributes": {
+        "order": 3,
+        "relative": "before V2"
+      },
+      "confidence": 0.65,
+      "raw_text": "The red car went into the junction first"
+    }
+  ]
+}

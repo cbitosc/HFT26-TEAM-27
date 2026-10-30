@@ -1,0 +1,146 @@
+{
+  "schema_version": "1.0.0",
+  "incident_id": "INC-2026-1012-01",
+  "generated_at": "2026-10-30T00:00:00Z",
+  "conflicts": [
+    {
+      "id": "cf_01",
+      "type": "numeric_mismatch",
+      "severity": "high",
+      "title": "V2 speed overstated by witness W1",
+      "description": "W1 estimates the SUV at 'at least 80 km/h'; V2 OBD records a steady 57.6 km/h before braking.",
+      "observation_ids": [
+        "wit_w1_03",
+        "sen_v2_001"
+      ],
+      "t_range_s": [
+        0.0,
+        9.6
+      ],
+      "details": {
+        "claimed_kmh": 80,
+        "measured_kmh": 57.6,
+        "delta_kmh": 22.4,
+        "rule": "|claimed - measured| > 15 km/h"
+      }
+    },
+    {
+      "id": "cf_02",
+      "type": "semantic",
+      "severity": "high",
+      "title": "Northbound signal state disputed",
+      "description": "W1 says V1's light was green on approach. The signal controller and dashcam both show yellow from t\u22487 s; V1 entered at t\u224810 s. W2 agrees it was yellow.",
+      "observation_ids": [
+        "wit_w1_02",
+        "sig_001",
+        "vid_002",
+        "wit_w2_02"
+      ],
+      "t_range_s": [
+        7.0,
+        10.0
+      ],
+      "details": {
+        "method": "llm_semantic",
+        "agreeing": [
+          "sig_001",
+          "vid_002",
+          "wit_w2_02"
+        ]
+      }
+    },
+    {
+      "id": "cf_03",
+      "type": "semantic",
+      "severity": "medium",
+      "title": "W2 claims V1 accelerated; telemetry shows braking",
+      "description": "W2 says the red car 'sped up to beat the light'. V1 telematics shows constant 46.8 km/h, then braking from t=9.0 s.",
+      "observation_ids": [
+        "wit_w2_03",
+        "sen_v1_001",
+        "sen_v1_002"
+      ],
+      "t_range_s": [
+        7.0,
+        10.0
+      ],
+      "details": {
+        "method": "rule:speed_trend",
+        "measured_trend": "constant_then_decreasing"
+      }
+    },
+    {
+      "id": "cf_04",
+      "type": "timestamp_overlap",
+      "severity": "medium",
+      "title": "W2's incident time does not overlap sensor time",
+      "description": "W2 puts the crash at about 17:45 (\u00b12 min); sensors place the collision at 17:42:10. W1's ~17:40 (\u00b15 min) is consistent.",
+      "observation_ids": [
+        "wit_w2_01",
+        "sen_v1_003",
+        "wit_w1_01"
+      ],
+      "t_range_s": [
+        10.0,
+        10.0
+      ],
+      "details": {
+        "claimed_window": [
+          "17:43:00",
+          "17:47:00"
+        ],
+        "sensor_time": "17:42:10",
+        "offset_s": 170
+      }
+    },
+    {
+      "id": "cf_05",
+      "type": "missing_evidence",
+      "severity": "medium",
+      "title": "V1 telematics dropout during yellow onset",
+      "description": "No V1 records between t=6.0 s and t=7.5 s, exactly when the northbound signal changed to yellow. V1's reaction to the yellow cannot be confirmed from telemetry.",
+      "observation_ids": [
+        "sen_v1_gap",
+        "sig_001"
+      ],
+      "t_range_s": [
+        6.0,
+        7.5
+      ],
+      "details": {
+        "missing_samples": 2,
+        "sample_rate_hz": 2
+      }
+    },
+    {
+      "id": "cf_06",
+      "type": "missing_evidence",
+      "severity": "low",
+      "title": "No direct view of V2's signal",
+      "description": "V2's red-light entry is inferred from the controller log only. The dashcam cannot see the eastbound signal and W2 did not see it.",
+      "observation_ids": [
+        "sig_000",
+        "vid_003"
+      ],
+      "t_range_s": [
+        9.0,
+        10.0
+      ],
+      "details": {}
+    },
+    {
+      "id": "cf_07",
+      "type": "semantic",
+      "severity": "low",
+      "title": "V2 vehicle type ambiguous",
+      "description": "W2 is unsure whether V2 was an SUV or a van; dashcam and W1 say SUV.",
+      "observation_ids": [
+        "wit_w2_04",
+        "vid_003",
+        "wit_w1_03"
+      ],
+      "t_range_s": null,
+      "details": {}
+    }
+  ]
+}

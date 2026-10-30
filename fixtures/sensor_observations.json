@@ -1,0 +1,330 @@
+{
+  "schema_version": "1.0.0",
+  "source_type": "sensor",
+  "evidence_id": "ev_fx_sensor_bundle",
+  "producer": "fixture:extraction.sensor",
+  "generated_at": "2026-10-30T00:00:00Z",
+  "warnings": [
+    "v1_telematics.csv: no records between t=6.0 s and t=7.5 s (2 samples missing at 2 Hz).",
+    "v2_obd.csv: speed converted from mph to km/h; unit_id OBD-7731 mapped to V2."
+  ],
+  "observations": [
+    {
+      "id": "sen_v1_001",
+      "source_type": "sensor",
+      "source_ref": {
+        "evidence_id": "ev_fx_v1tel",
+        "file": "v1_telematics.csv",
+        "locator": "row:2"
+      },
+      "timestamp": "2026-10-12T17:42:00+05:30",
+      "t_rel_s": 0.0,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": "V1",
+      "vehicle_description": "red sedan, TS09 AB 1234",
+      "action": "moving",
+      "attributes": {
+        "speed_kmh": 46.8,
+        "x_m": -1.75,
+        "y_m": -126.75,
+        "heading_deg": 0.0
+      },
+      "confidence": 0.98,
+      "raw_text": null
+    },
+    {
+      "id": "sen_v1_gap",
+      "source_type": "sensor",
+      "source_ref": {
+        "evidence_id": "ev_fx_v1tel",
+        "file": "v1_telematics.csv",
+        "locator": "rows:14-15"
+      },
+      "timestamp": "2026-10-12T17:42:06+05:30",
+      "t_rel_s": 6.0,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": "V1",
+      "vehicle_description": null,
+      "action": "sensor_gap",
+      "attributes": {
+        "gap_start_s": 6.0,
+        "gap_end_s": 7.5,
+        "missing_samples": 2
+      },
+      "confidence": 1.0,
+      "raw_text": null
+    },
+    {
+      "id": "sen_v1_002",
+      "source_type": "sensor",
+      "source_ref": {
+        "evidence_id": "ev_fx_v1tel",
+        "file": "v1_telematics.csv",
+        "locator": "row:18"
+      },
+      "timestamp": "2026-10-12T17:42:09+05:30",
+      "t_rel_s": 9.0,
+      "time_uncertainty_s": 0.5,
+      "vehicle_id": "V1",
+      "vehicle_description": null,
+      "action": "braking",
+      "attributes": {
+        "speed_kmh": 46.8,
+        "x_m": -1.75,
+        "y_m": -9.75,
+        "heading_deg": 0.0
+      },
+      "confidence": 0.97,
+      "raw_text": null
+    },
+    {
+      "id": "sen_v1_003",
+      "source_type": "sensor",
+      "source_ref": {
+        "evidence_id": "ev_fx_v1tel",
+        "file": "v1_telematics.csv",
+        "locator": "row:20"
+      },
+      "timestamp": "2026-10-12T17:42:10+05:30",
+      "t_rel_s": 10.0,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": "V1",
+      "vehicle_description": null,
+      "action": "entering_intersection",
+      "attributes": {
+        "speed_kmh": 36.0,
+        "x_m": -1.75,
+        "y_m": 1.75,
+        "heading_deg": 0.0
+      },
+      "confidence": 0.95,
+      "raw_text": null
+    },
+    {
+      "id": "sen_v1_004",
+      "source_type": "sensor",
+      "source_ref": {
+        "evidence_id": "ev_fx_v1tel",
+        "file": "v1_telematics.csv",
+        "locator": "row:21"
+      },
+      "timestamp": "2026-10-12T17:42:10.500000+05:30",
+      "t_rel_s": 10.5,
+      "time_uncertainty_s": 0.5,
+      "vehicle_id": "V1",
+      "vehicle_description": null,
+      "action": "sudden_heading_change",
+      "attributes": {
+        "heading_change_deg": 35,
+        "speed_kmh": 9.6,
+        "x_m": 0.03,
+        "y_m": 2.86,
+        "heading_deg": 35.0
+      },
+      "confidence": 0.9,
+      "raw_text": null
+    },
+    {
+      "id": "sen_v1_005",
+      "source_type": "sensor",
+      "source_ref": {
+        "evidence_id": "ev_fx_v1tel",
+        "file": "v1_telematics.csv",
+        "locator": "row:23"
+      },
+      "timestamp": "2026-10-12T17:42:11.500000+05:30",
+      "t_rel_s": 11.5,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": "V1",
+      "vehicle_description": null,
+      "action": "stopped",
+      "attributes": {
+        "x_m": 1.45,
+        "y_m": 3.75,
+        "heading_deg": 35.0
+      },
+      "confidence": 0.95,
+      "raw_text": null
+    },
+    {
+      "id": "sen_v2_001",
+      "source_type": "sensor",
+      "source_ref": {
+        "evidence_id": "ev_fx_v2obd",
+        "file": "v2_obd.csv",
+        "locator": "row:2"
+      },
+      "timestamp": "2026-10-12T17:42:00+05:30",
+      "t_rel_s": 0.0,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": "V2",
+      "vehicle_description": "unit OBD-7731",
+      "action": "moving",
+      "attributes": {
+        "speed_kmh": 57.6,
+        "speed_mph_raw": 35.8,
+        "x_m": -161.35,
+        "y_m": 1.75,
+        "heading_deg": 90.0
+      },
+      "confidence": 0.98,
+      "raw_text": null
+    },
+    {
+      "id": "sen_v2_002",
+      "source_type": "sensor",
+      "source_ref": {
+        "evidence_id": "ev_fx_v2obd",
+        "file": "v2_obd.csv",
+        "locator": "row:22"
+      },
+      "timestamp": "2026-10-12T17:42:10+05:30",
+      "t_rel_s": 10.0,
+      "time_uncertainty_s": 0.5,
+      "vehicle_id": "V2",
+      "vehicle_description": null,
+      "action": "braking",
+      "attributes": {
+        "speed_kmh": 50.4,
+        "brake_onset_between_s": [
+          9.5,
+          10.0
+        ],
+        "x_m": -1.75,
+        "y_m": 1.75,
+        "heading_deg": 90.0
+      },
+      "confidence": 0.95,
+      "raw_text": null
+    },
+    {
+      "id": "sen_v2_003",
+      "source_type": "sensor",
+      "source_ref": {
+        "evidence_id": "ev_fx_v2obd",
+        "file": "v2_obd.csv",
+        "locator": "row:23"
+      },
+      "timestamp": "2026-10-12T17:42:10.500000+05:30",
+      "t_rel_s": 10.5,
+      "time_uncertainty_s": 0.5,
+      "vehicle_id": "V2",
+      "vehicle_description": null,
+      "action": "sudden_heading_change",
+      "attributes": {
+        "heading_change_deg": -15,
+        "x_m": 0.25,
+        "y_m": 2.19,
+        "heading_deg": 75.0
+      },
+      "confidence": 0.9,
+      "raw_text": null
+    },
+    {
+      "id": "sen_v2_004",
+      "source_type": "sensor",
+      "source_ref": {
+        "evidence_id": "ev_fx_v2obd",
+        "file": "v2_obd.csv",
+        "locator": "row:25"
+      },
+      "timestamp": "2026-10-12T17:42:11.500000+05:30",
+      "t_rel_s": 11.5,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": "V2",
+      "vehicle_description": null,
+      "action": "stopped",
+      "attributes": {
+        "x_m": 1.85,
+        "y_m": 2.55,
+        "heading_deg": 75.0
+      },
+      "confidence": 0.95,
+      "raw_text": null
+    },
+    {
+      "id": "sig_001",
+      "source_type": "sensor",
+      "source_ref": {
+        "evidence_id": "ev_fx_signal",
+        "file": "signal_controller.csv",
+        "locator": "row:4"
+      },
+      "timestamp": "2026-10-12T17:42:07+05:30",
+      "t_rel_s": 7.0,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": null,
+      "vehicle_description": null,
+      "action": "signal_state",
+      "attributes": {
+        "approach": "NB",
+        "signal_state": "yellow"
+      },
+      "confidence": 1.0,
+      "raw_text": null
+    },
+    {
+      "id": "sig_002",
+      "source_type": "sensor",
+      "source_ref": {
+        "evidence_id": "ev_fx_signal",
+        "file": "signal_controller.csv",
+        "locator": "row:5"
+      },
+      "timestamp": "2026-10-12T17:42:10+05:30",
+      "t_rel_s": 10.0,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": null,
+      "vehicle_description": null,
+      "action": "signal_state",
+      "attributes": {
+        "approach": "NB",
+        "signal_state": "red"
+      },
+      "confidence": 1.0,
+      "raw_text": null
+    },
+    {
+      "id": "sig_000",
+      "source_type": "sensor",
+      "source_ref": {
+        "evidence_id": "ev_fx_signal",
+        "file": "signal_controller.csv",
+        "locator": "row:2"
+      },
+      "timestamp": "2026-10-12T17:41:40+05:30",
+      "t_rel_s": -20.0,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": null,
+      "vehicle_description": null,
+      "action": "signal_state",
+      "attributes": {
+        "approach": "EB",
+        "signal_state": "red"
+      },
+      "confidence": 1.0,
+      "raw_text": null
+    },
+    {
+      "id": "sig_003",
+      "source_type": "sensor",
+      "source_ref": {
+        "evidence_id": "ev_fx_signal",
+        "file": "signal_controller.csv",
+        "locator": "row:6"
+      },
+      "timestamp": "2026-10-12T17:42:11+05:30",
+      "t_rel_s": 11.0,
+      "time_uncertainty_s": 0.0,
+      "vehicle_id": null,
+      "vehicle_description": null,
+      "action": "signal_state",
+      "attributes": {
+        "approach": "EB",
+        "signal_state": "green"
+      },
+      "confidence": 1.0,
+      "raw_text": null
+    }
+  ]
+}

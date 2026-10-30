@@ -1,0 +1,62 @@
+{
+  "$defs": {
+    "SourceType": {
+      "enum": [
+        "video",
+        "witness",
+        "sensor"
+      ],
+      "title": "SourceType",
+      "type": "string"
+    }
+  },
+  "description": "One uploaded file. Created by the upload endpoint, read by modules 1\u20132.",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/$defs/SourceType"
+    },
+    "filename": {
+      "title": "Filename",
+      "type": "string"
+    },
+    "content_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Content Type"
+    },
+    "size_bytes": {
+      "title": "Size Bytes",
+      "type": "integer"
+    },
+    "stored_path": {
+      "title": "Stored Path",
+      "type": "string"
+    },
+    "uploaded_at": {
+      "format": "date-time",
+      "title": "Uploaded At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "kind",
+    "filename",
+    "size_bytes",
+    "stored_path",
+    "uploaded_at"
+  ],
+  "title": "Evidence",
+  "type": "object"
+}
