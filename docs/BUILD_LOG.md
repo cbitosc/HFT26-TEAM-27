@@ -290,3 +290,9 @@ With real uploads, any stage that couldn't run (no Featherless key, unbuilt, or 
 | `tests/test_api.py` | The upload test now asserts live mode: witness `skipped` (no key), junk CSV `error`, no `fixture` status, and empty observations/timeline/conflicts/reconstruction |
 
 Checked: modules 3–5 accept empty input (0 events, 0 conflicts, 0 vehicles). `pytest` **87 passed**, frontend build OK. Example dataset rerun in the dashboard: video `skipped`, both CSVs `real`, timeline has only the two motion spikes (t=24 s, t=45 s), 0 conflicts, no vehicles or collision, no console errors.
+
+## 2026-10-30 · Local `.env` for the Featherless key
+
+- Created `.env` in the repo root (**git-ignored, not committed**) with an empty `FEATHERLESS_API_KEY=` placeholder and commented optional model overrides. The key stays empty until the user adds it; with an empty key, the video and witness stages are `skipped`
+- `.claude/launch.json`: the backend starts uvicorn with `--env-file ../../.env` when the file exists (python-dotenv is already installed via `uvicorn[standard]`)
+- `CLAUDE.md`: the backend command now includes `--env-file ../../.env`

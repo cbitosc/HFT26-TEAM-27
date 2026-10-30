@@ -4,7 +4,7 @@
     {
       "name": "backend",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd src/backend && ../../.venv/bin/uvicorn app.main:app --port 8000"],
+      "runtimeArgs": ["-c", "cd src/backend && ../../.venv/bin/uvicorn app.main:app --port 8000 $([ -f ../../.env ] && echo --env-file ../../.env)"],
       "port": 8000
     },
     {

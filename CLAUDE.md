@@ -26,7 +26,7 @@ tests/                pytest; fixtures must validate against schemas
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r src/backend/requirements.txt
 .venv/bin/pytest                                   # from repo root
-cd src/backend && ../../.venv/bin/uvicorn app.main:app --reload --port 8000
+cd src/backend && ../../.venv/bin/uvicorn app.main:app --reload --port 8000 --env-file ../../.env   # .env holds FEATHERLESS_API_KEY (git-ignored)
 npm --prefix src/frontend install && npm --prefix src/frontend run dev   # http://localhost:5173, proxies /api to :8000
 .venv/bin/python scripts/generate_sensor_data.py   # regenerate data/ from scenario.py
 .venv/bin/python scripts/generate_witness_statements.py
