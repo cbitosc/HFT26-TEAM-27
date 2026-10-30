@@ -339,6 +339,9 @@ OPPOSITES = {"no_braking": {"braking"}, "accelerating": {"braking", "stopped"}, 
              "braking": {"accelerating"}}
 
 
+NO_BRAKING_LOOKBACK_S = 15.0
+
+
 def opposing_actions(ctx: Context) -> list[dict]:
     """A witness says a vehicle did X; a sensor, the video or tracking shows the opposite then."""
     out = []
@@ -355,6 +358,8 @@ def opposing_actions(ctx: Context) -> list[dict]:
                 continue
             window = (t_c - 5.0, t_c)
         lo, hi = window[0] - 1.0, window[1] + 1.0
+        if o.action == "no_braking":  # "did not brake before it hit": any braking over the run-up contradicts it
+            lo = min(lo, hi - NO_BRAKING_LOOKBACK_S)
         record = [r for r in ctx.observations if r.source_type != SourceType.witness and r.vehicle_id == o.vehicle_id
                   and r.action in opposite and (t := ctx.t_of(r)) is not None and lo <= t <= hi]
         if o.action == "stopped":  # "stopped" is contradicted only by real movement, not by a moving summary at t0

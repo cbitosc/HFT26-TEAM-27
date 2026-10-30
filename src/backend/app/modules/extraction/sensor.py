@@ -35,8 +35,41 @@ TIME_COLS = {"timestamp": "iso", "time": "iso", "datetime": "iso", "ts": "iso",
              "epoch_ms": "ms", "timestamp_ms": "ms", "epoch_s": "s", "epoch": "s",
              "timestamp_s": "rel", "time_s": "rel", "t_s": "rel", "t_rel_s": "rel", "seconds": "rel"}
 # column name -> (factor to km/h, unit label for the raw attribute)
-SPEED_COLS = {"speed_kmh": (1.0, "kmh"), "speed_kph": (1.0, "kmh"), "speed_mph": (1.609344, "mph"),
-              "speed_ms": (3.6, "ms"), "speed_mps": (3.6, "ms")}
+# unit -> (factor to km/h, label kept in the raw attribute name). Matched on the column header tokens.
+SPEED_UNITS = {"kmh": (1.0, "kmh"), "kph": (1.0, "kmh"), "mph": (1.609344, "mph"),
+               "ms": (3.6, "ms"), "mps": (3.6, "ms"), "knots": (1.852, "knots"), "kn": (1.852, "knots"),
+               "kt": (1.852, "knots"), "kts": (1.852, "knots"), "fps": (1.09728, "fps"), "fts": (1.09728, "fps")}
+SPEED_WORD = re.compile(r"(^|_)(speed|velocity|vel|spd|speedometer)($|_)")
+NOT_SPEED = re.compile(r"limit|max|min|avg|mean|target|set")
+
+
+def _tokens(col: str) -> list[str]:
+    """Header tokens with units normalised: 'Speed (km/h)' -> speed, kmh; 'v_m/s' -> v, ms."""
+    c = re.sub(r"km\s*/\s*h", "kmh", col.lower())
+    c = re.sub(r"m\s*/\s*s", "ms", c)
+    c = re.sub(r"(?:ft|feet)\s*/\s*s", "fts", c)
+    return [t for t in re.split(r"[^a-z0-9]+", c) if t]
+
+
+def speed_column(cols: list[str]) -> tuple[str, float, str, bool] | None:
+    """(column, factor to km/h, unit label, unit_assumed) for the speed column, or None.
+
+    The unit comes from the header (any of kmh, kph, mph, m/s, knots, ft/s). A speed column
+    with no unit in its name is read as km/h but flagged as assumed, never silently trusted."""
+    found = None
+    for c in cols:
+        if c.startswith("_") or NOT_SPEED.search(c):
+            continue
+        toks = _tokens(c)
+        unit = next((t for t in toks if t in SPEED_UNITS), None)
+        named = SPEED_WORD.search("_" + "_".join(toks) + "_") or toks[0] in ("v", "spd")
+        # a header that is only a speed-like unit (kmh, mph, knots) is a speed; "ms" alone or "epoch_ms" is time
+        unit_only = len(toks) == 1 and unit in ("kmh", "kph", "mph", "knots", "kts", "mps")
+        if unit and (named or unit_only):
+            return (c, *SPEED_UNITS[unit], False)
+        if found is None and SPEED_WORD.search("_" + "_".join(toks) + "_"):
+            found = (c, 1.0, "kmh", True)
+    return found
 X_COLS = ("x_m", "pos_x", "x", "east_m", "easting")
 Y_COLS = ("y_m", "pos_y", "y", "north_m", "northing")
 LAT_COLS = ("lat", "latitude", "gps_lat")
@@ -62,25 +95,31 @@ FLOW_SPIKE_Z = 2.5        # robust z-score (median/MAD) of a view's p95 flow tha
 FLOW_SPIKE_RATIO = 1.5    # ...and at least this multiple of the view's median
 
 
+MIN_PARSE_SHARE = 0.5   # share of non-empty cells that must parse for a column to be the time column
+
+
 def _pick(cols: list[str], names) -> str | None:
     return next((c for c in names if c in cols), None)
 
 
 def _time_kind(values: pd.Series, name: str) -> str | None:
-    """iso | ms | s | rel from the values themselves (names only break ties)."""
+    """iso | ms | s | rel from the values themselves (names only break ties).
+
+    A column counts as time when most of its values parse; stray unreadable cells are skipped
+    row by row later, with a warning, instead of rejecting the whole file."""
     v = values.astype(str).str.strip()
     v = v[v != ""].head(200)
     if v.empty:
         return None
     nums = pd.to_numeric(v, errors="coerce")
-    if nums.notna().mean() >= 0.9:
+    if nums.notna().mean() >= MIN_PARSE_SHARE:
         med = float(nums.median())
         if name.endswith("_ms") or med > 1e11:
             return "ms"
         if med > 1e8:
             return "s"      # epoch seconds (after 1973)
         return "rel"        # seconds from the start of the recording
-    if pd.to_datetime(v, format="ISO8601", errors="coerce", utc=True).notna().mean() >= 0.9:
+    if pd.to_datetime(v, format="ISO8601", errors="coerce", utc=True).notna().mean() >= MIN_PARSE_SHARE:
         return "iso"
     return None
 
@@ -426,8 +465,8 @@ def latlon_to_m(lat: float, lon: float, origin: tuple[float, float]) -> tuple[fl
 
 def _extract_tracks(df: pd.DataFrame, b: _Builder) -> None:
     cols = list(df.columns)
-    scol = _pick(cols, SPEED_COLS)
-    factor, unit = SPEED_COLS[scol] if scol else (1.0, "kmh")
+    sp = speed_column(cols)
+    scol, factor, unit, assumed = sp if sp else (None, 1.0, "kmh", False)
     picked = {"x": _pick(cols, X_COLS), "y": _pick(cols, Y_COLS), "hdg": _pick(cols, HEADING_COLS),
               "brake": _pick(cols, BRAKE_COLS)}
     lat, lon = _pick(cols, LAT_COLS), _pick(cols, LON_COLS)
@@ -452,6 +491,9 @@ def _extract_tracks(df: pd.DataFrame, b: _Builder) -> None:
             df = df.loc[~bad]
         if unit != "kmh":
             b.warnings.append(f"{b.file}: speed converted from {unit} to km/h (raw value kept as speed_{unit}_raw).")
+        if assumed:
+            b.warnings.append(f"{b.file}: column '{scol}' has no unit in its name; read as km/h (assumed). "
+                              "Check against the source before relying on speeds.")
     if picked["brake"]:
         df["_brake"] = df[picked["brake"]].str.strip().str.lower().isin(BRAKE_TRUE)
 
@@ -503,7 +545,7 @@ def classify_columns(cols: list[str], df: pd.DataFrame | None = None) -> str | N
     if _pick(cols, APPROACH_COLS) and _pick(cols, STATE_COLS):
         return "signal_log"
     has_xy = (_pick(cols, X_COLS) and _pick(cols, Y_COLS)) or (_pick(cols, LAT_COLS) and _pick(cols, LON_COLS))
-    if _pick(cols, SPEED_COLS) or has_xy:
+    if speed_column(cols) or has_xy:
         return "vehicle_track"
     if _flow_columns(cols):
         return "optical_flow"

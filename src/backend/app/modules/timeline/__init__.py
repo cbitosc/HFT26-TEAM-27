@@ -339,10 +339,18 @@ class _Builder:
                 cands = sorted(self._candidates(o, fam), key=lambda c: c.t)
                 if cands:
                     cands[0].attached.append(o)
-                else:
-                    t0 = float(np.median(stmt_times)) if stmt_times else 0.0
+                elif stmt_times:
+                    t0 = float(np.median(stmt_times))
                     spread = float(np.ptp(stmt_times)) if len(stmt_times) > 1 else WEAK_UNCERTAINTY_S
                     self._new_placed(o, fam, t0, t0, spread / 2)
+                else:  # same: sometime within the anchored evidence
+                    lo, hi = self._span()
+                    self._new_placed(o, fam, lo, hi, max((hi - lo) / 2, WEAK_UNCERTAINTY_S / 2))
+
+    def _span(self) -> tuple[float, float]:
+        """Time span of the anchored evidence: where an unplaceable claim could have happened."""
+        times = [c.t for c in self.clusters if c.anchored]
+        return (min(times), max(times)) if times else (0.0, 0.0)
 
     def _place_gaps(self, placed):
         """Unmatched ordered observations span the gap between their placed neighbours."""
@@ -354,8 +362,8 @@ class _Builder:
             nxt = next((times[j] for j in range(i + 1, len(times)) if times[j] is not None), None)
             lo = prev if prev is not None else nxt
             hi = nxt if nxt is not None else prev
-            if lo is None:
-                lo = hi = 0.0
+            if lo is None:  # nothing to anchor to: it happened sometime within the evidence, not at t = 0
+                lo, hi = self._span()
             lo, hi = min(lo, hi), max(lo, hi)
             self._new_placed(o, self._family(o, None), lo, hi, (hi - lo) / 2)
 
