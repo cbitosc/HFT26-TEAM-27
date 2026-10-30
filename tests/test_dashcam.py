@@ -2,6 +2,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from synthetic import render_dashcam  # noqa: E402
 
@@ -70,4 +72,4 @@ def test_box_tracks_link_the_same_vehicle_across_keyframes():
     by_label = {t.attributes["label"]: t for t in tracks}
     assert set(by_label) == {"white SUV", "red car"} and all(t.basis == "inferred" for t in tracks)
     assert len(by_label["white SUV"].attributes["points"]) == 4 and len(by_label["red car"].attributes["points"]) == 3
-    assert by_label["white SUV"].attributes["points"][-1][1:] == [(520 + 560) / 2000 * 1600, 0.55 * 900]
+    assert by_label["white SUV"].attributes["points"][-1][1:] == pytest.approx([896.0, 495.0])  # last box centre
