@@ -133,3 +133,16 @@ Tests (`tests/`):
 
 - Created branch `feature/prototype` from `main` and committed everything above as one commit. Runtime `storage/`, `.venv/` and `node_modules/` are ignored
 - Next: one parallel session per module (1, 2, 3, 4, 5), each branching from `feature/prototype`
+
+## 2026-10-30 · Module 1 (evidence ingestion) implemented
+
+`analyze_video(evidence)` in `src/backend/app/modules/ingestion/` is now real (signature unchanged; an optional `client=` argument lets tests inject a fake model).
+
+- `video.py`: OpenCV `probe_video` validates the file (opens, fps in (0, 1000], frame count > 0, first frame decodes; else `VideoError`). `sample_indices` picks frames at `VIDEO_SAMPLE_FPS` (default 3) capped at `VIDEO_MAX_FRAMES` (default 90). `extract_frames` reads them sequentially. Frames are downscaled to 768 px wide JPEG for the model
+- `vision.py`: `VisionClient` calls Featherless `/chat/completions` (OpenAI-compatible, via `httpx`) with one image per request, temperature 0.1, one retry. The prompt asks for one JSON object (ego action, other vehicles, signals, collision). `parse_frame_analysis` strips code fences/prose, validates with lenient Pydantic models (clamps confidence, maps amber→yellow, unknown actions→`moving`)
+- `__init__.py`: frames are analysed with 4 worker threads; per-frame findings collapse into state changes (signal colour per approach, action per vehicle, first visible collision). Each becomes an `Observation` with `t_rel_s = frame/fps + VIDEO_T0_OFFSET_S`, `locator = frame:<n>`, `time_uncertainty_s` = half the sampling interval, timestamp from the scenario reference time (17:42:00 IST). The dashcam vehicle gets `VIDEO_EGO_VEHICLE_ID` (default `V1`); other vehicles keep `vehicle_id: null` with `attributes.label`/`direction` for module 3 to resolve
+- Model is `FEATHERLESS_VISION_MODEL` (default `google/gemma-3-27b-it`)
+- No `FEATHERLESS_API_KEY`: the video is still validated and sampled, then `NotImplementedError` → pipeline serves the fixture. An invalid video raises `VideoError` (stage shows `error`). If every frame's model call fails it raises `RuntimeError`; partial failures become warnings
+- `tests/test_ingestion.py` (11 tests): synthetic MJPG video in `tmp_path`; probe, rejection of non-video, sampling indices/times, the no-key fallback, a mocked model run that validates as `ObservationSet` and checks change-collapsing, `frame:<n>` and `t_rel_s`, the HTTP request shape via `httpx.MockTransport`, and lenient parsing
+- No new dependencies (OpenCV, httpx, pydantic were already in requirements)
+- Verification: `pytest` **23 passed**. Not run against the live Featherless API (no key in this session) and no real dashcam clip exists yet. Frontend untouched, so no frontend build was needed
