@@ -133,3 +133,19 @@ Tests (`tests/`):
 
 - Created branch `feature/prototype` from `main` and committed everything above as one commit. Runtime `storage/`, `.venv/` and `node_modules/` are ignored
 - Next: one parallel session per module (1, 2, 3, 4, 5), each branching from `feature/prototype`
+
+## 2026-10-30 · Module 4: contradiction detection
+
+`detect_conflicts(observation_sets, timeline)` is implemented, so stage 4 runs as **real**.
+
+- `src/backend/app/modules/contradictions/context.py`: indexes over observations and timeline. Witness claims get their time from the timeline event that lists them, or (for "its light was green", "sped up") from the vehicle's sensor-anchored junction entry. Approach comes from signal claims, heading or direction; a dashcam "ego lane" maps to the ego vehicle's approach
+- `rules.py`: seven rules
+  - numeric: non-sensor `speed_kmh` vs sensor speed of the same vehicle in the claim's window, 15 km/h tolerance, "at least"/"at most" qualifiers as bounds; ≥20 km/h off is high
+  - timestamp: witness clock time ± uncertainty vs the sensor timestamp of the same timeline event; consistent witnesses are cited too
+  - semantic: signal claims vs the controller phase (same approach, same time); "accelerating"/"sped up" vs the measured speed trend; hedged or conflicting vehicle body types
+  - missing evidence: `sensor_gap` overlapping a signal change, event onset or the collision; pre-collision events backed by one source type
+- `llm.py`: optional Featherless pass (`FEATHERLESS_API_KEY`, model from `FEATHERLESS_CONTRADICTIONS_MODEL`) over witness quotes no rule flagged. Unknown ids are dropped; no key or any error skips it
+- `tests/test_contradictions.py`: 12 tests. Every `KNOWN_DISCREPANCIES` entry and the V1 gap are found with the right type, values checked against `scenario.py`, all ids exist, LLM filtering and fallback, "ego lane" mapping
+- `tests/test_api.py`: the demo-run test now accepts `real` as well as `fixture` stages (it failed as soon as any module was built)
+- On the fixtures the report has 8 conflicts: the 7 in `fixtures/conflicts.json` plus "V2 begins braking (late)" having a single source
+- `pytest`: 24 passed. `npm run build`: OK
