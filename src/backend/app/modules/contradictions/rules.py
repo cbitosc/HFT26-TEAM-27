@@ -8,7 +8,7 @@ from datetime import timedelta
 
 from app.schemas import ConflictType, Observation, Severity, SourceType
 
-from .context import APPROACH_NAMES, Context, source_label
+from .context import APPROACH_NAMES, SOURCE_RANK, Context, source_label, witness_label
 
 SPEED_TOLERANCE_KMH = 15.0      # a witness estimate within this of the record is fine
 SPEED_HIGH_DELTA_KMH = 20.0     # beyond this it changes the story
@@ -515,5 +515,144 @@ def single_source_events(ctx: Context) -> list[dict]:
     return out
 
 
+# ------------------------------------------------- source against source
+
+SOURCE_TIME_TOLERANCE_S = 1.0   # two sources may place one event this far apart (plus their own uncertainty)
+SOURCE_TIME_HIGH_S = 5.0
+MIN_MATCHED_SAMPLES = 3
+TIMED_EVENT_ACTIONS = ("collision", "entering_intersection")
+
+
+def source_speeds(ctx: Context) -> list[dict]:
+    """Two sensors report different speeds for one vehicle at the same moments (e.g. GPS vs OBD)."""
+    out = []
+    for vid in sorted({o.vehicle_id for o in ctx.observations if o.vehicle_id}):
+        by_file: dict[str, list[Observation]] = {}
+        for s in ctx.speed_samples(vid):
+            by_file.setdefault(s.source_ref.evidence_id, []).append(s)
+        files = sorted(by_file)
+        for i, fa in enumerate(files):
+            for fb in files[i + 1:]:
+                pairs = []
+                for a in by_file[fa]:
+                    near = min(by_file[fb], key=lambda b: abs(ctx.t_of(b) - ctx.t_of(a)))
+                    if abs(ctx.t_of(near) - ctx.t_of(a)) <= SOURCE_TIME_TOLERANCE_S + a.time_uncertainty_s + near.time_uncertainty_s:
+                        pairs.append((a, near, abs(a.attributes["speed_kmh"] - near.attributes["speed_kmh"])))
+                far = [p for p in pairs if p[2] > SPEED_TOLERANCE_KMH]
+                if len(pairs) < MIN_MATCHED_SAMPLES or len(far) * 2 < len(pairs):
+                    continue
+                a, b, d = max(far, key=lambda p: p[2])
+                lo, hi = min(ctx.t_of(p[0]) for p in far), max(ctx.t_of(p[0]) for p in far)
+                out.append(_draft(
+                    ConflictType.numeric_mismatch, Severity.high if d >= SPEED_HIGH_DELTA_KMH else Severity.medium,
+                    f"{vid} speed differs between {a.source_ref.file} and {b.source_ref.file}",
+                    f"{len(far)} of {len(pairs)} paired readings differ by more than {SPEED_TOLERANCE_KMH:g} km/h "
+                    f"(largest: {a.attributes['speed_kmh']:g} vs {b.attributes['speed_kmh']:g} km/h near {_fmt_t(ctx.t_of(a))}).",
+                    [a.id, b.id], (lo, hi),
+                    {"method": "rule:source_speed", "matched": len(pairs), "disagreeing": len(far),
+                     "max_delta_kmh": round(d, 1), "tolerance_kmh": SPEED_TOLERANCE_KMH}))
+    return out
+
+
+def source_event_times(ctx: Context) -> list[dict]:
+    """Two kinds of source (sensor / video) place the same event (collision, a vehicle's junction entry) at
+    times that do not overlap, uncertainty included."""
+    out = []
+    keyed: dict[tuple, dict[SourceType, Observation]] = {}
+    for o in ctx.timed(lambda o: o.source_type != SourceType.witness and o.action in TIMED_EVENT_ACTIONS):
+        key = (o.action, None if o.action == "collision" else o.vehicle_id)
+        if o.action != "collision" and not o.vehicle_id:
+            continue
+        keyed.setdefault(key, {}).setdefault(o.source_type, o)  # earliest per source
+    for (action, vid), by_src in keyed.items():
+        srcs = sorted(by_src, key=lambda s: SOURCE_RANK[s])
+        for i, sa in enumerate(srcs):
+            for sb in srcs[i + 1:]:
+                a, b = by_src[sa], by_src[sb]
+                gap = abs(ctx.t_of(a) - ctx.t_of(b)) - a.time_uncertainty_s - b.time_uncertainty_s
+                if gap <= SOURCE_TIME_TOLERANCE_S:
+                    continue
+                what = action.replace("_", " ") + (f" of {vid}" if vid else "")
+                out.append(_draft(
+                    ConflictType.timestamp_overlap, Severity.high if gap >= SOURCE_TIME_HIGH_S else Severity.medium,
+                    f"{what.capitalize()} time disagrees between {source_label(a)} and {source_label(b)}",
+                    f"{source_label(a)} places the {what} at {_fmt_t(ctx.t_of(a))} (±{a.time_uncertainty_s:g} s), "
+                    f"{source_label(b)} at {_fmt_t(ctx.t_of(b))} (±{b.time_uncertainty_s:g} s): the windows are "
+                    f"{gap:.1f} s apart.",
+                    [a.id, b.id], tuple(sorted((ctx.t_of(a), ctx.t_of(b)))),
+                    {"method": "rule:source_event_time", "gap_s": round(gap, 2), "action": action}))
+    return out
+
+
+def witness_signals(ctx: Context) -> list[dict]:
+    """Two witnesses name different light colours for one approach and there is no controller log or footage
+    to say which is right (signal_states judges claims against a record when there is one)."""
+    claims: dict[str, list[Observation]] = {}
+    for o in ctx.observations:
+        if o.action != "signal_state" or o.source_type != SourceType.witness:
+            continue
+        approach = ctx.normalise_approach(o.attributes.get("approach"))
+        if approach is None and o.vehicle_id:
+            approach = ctx.approach_of(o.vehicle_id)
+        if approach and o.attributes.get("signal_state"):
+            claims.setdefault(approach, []).append(o)
+    out = []
+    for approach, cs in claims.items():
+        if any(r.source_type != SourceType.witness and r.action == "signal_state"
+               and (r.attributes.get("approach") == approach or ctx.normalise_approach(r.attributes.get("approach")) == approach)
+               for r in ctx.observations):
+            continue
+        for i, a in enumerate(cs):
+            for b in cs[i + 1:]:
+                if witness_label(a) == witness_label(b) or a.attributes["signal_state"] == b.attributes["signal_state"]:
+                    continue
+                wa, wb = ctx.window_of(a), ctx.window_of(b)
+                if wa and wb and (wa[0] > wb[1] or wb[0] > wa[1]):
+                    continue  # different moments: the light may have changed
+                out.append(_draft(
+                    ConflictType.semantic, Severity.medium, f"{APPROACH_NAMES.get(approach, approach)} signal state disputed between witnesses",
+                    f"{source_label(a)} says {a.attributes['signal_state']}, {source_label(b)} says {b.attributes['signal_state']}; "
+                    f"no controller log or footage settles it.",
+                    [a.id, b.id], wa or wb, {"method": "rule:witness_signal", "approach": approach}))
+    return out
+
+
+def event_order(ctx: Context) -> list[dict]:
+    """A witness tells the order in which vehicles did the same thing ("the red car went in first, then the
+    white one"); the record shows the opposite order."""
+    out = []
+    stmts: dict[str, list[Observation]] = {}
+    for o in ctx.observations:
+        if o.source_type == SourceType.witness and o.vehicle_id and isinstance(o.attributes.get("order"), int) \
+                and o.action in TIMED_EVENT_ACTIONS + ("braking",):
+            stmts.setdefault(f"{o.source_ref.evidence_id}|{o.source_ref.file}", []).append(o)
+    for claims in stmts.values():
+        claims.sort(key=lambda o: o.attributes["order"])
+        for i, a in enumerate(claims):
+            for b in claims[i + 1:]:
+                if a.action != b.action or a.vehicle_id == b.vehicle_id or a.attributes["order"] == b.attributes["order"]:
+                    continue
+                rec = lambda o: min((r for r in ctx.observations if r.source_type != SourceType.witness  # noqa: E731
+                                     and r.vehicle_id == o.vehicle_id and r.action == o.action
+                                     and ctx.t_of(r) is not None), key=lambda r: (SOURCE_RANK[r.source_type], ctx.t_of(r)), default=None)
+                ra, rb = rec(a), rec(b)
+                if not ra or not rb:
+                    continue
+                gap = ctx.t_of(ra) - ctx.t_of(rb) - ra.time_uncertainty_s - rb.time_uncertainty_s
+                if gap <= SOURCE_TIME_TOLERANCE_S:
+                    continue
+                what = a.action.replace("_", " ")
+                out.append(_draft(
+                    ConflictType.semantic, Severity.medium,
+                    f"{source_label(a)} orders {a.vehicle_id} before {b.vehicle_id} ({what}); the record has it the other way",
+                    f"{source_label(a)} tells {a.vehicle_id}'s {what} first and {b.vehicle_id}'s after it; "
+                    f"{source_label(ra)} puts {a.vehicle_id} at {_fmt_t(ctx.t_of(ra))} and {source_label(rb)} puts "
+                    f"{b.vehicle_id} at {_fmt_t(ctx.t_of(rb))}.",
+                    [a.id, b.id, ra.id, rb.id], (ctx.t_of(rb), ctx.t_of(ra)),
+                    {"method": "rule:event_order", "claimed_first": a.vehicle_id, "recorded_first": b.vehicle_id}))
+    return out
+
+
 ALL_RULES = [speed_claims, signal_states, speed_trends, opposing_actions, clock_times, sensor_gaps, coverage_gaps,
-             single_source_events, vehicle_types, colours]
+             single_source_events, vehicle_types, colours, source_speeds, source_event_times, witness_signals,
+             event_order]

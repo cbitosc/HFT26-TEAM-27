@@ -368,6 +368,11 @@ class _Builder:
             self._new_placed(o, self._family(o, None), lo, hi, (hi - lo) / 2)
 
     def _new_placed(self, o, fam, lo, hi, unc):
+        if fam == "post_collision" and self.collision_t is not None and lo < self.collision_t:
+            # "came to rest after the collision" cannot have happened before it
+            lo = self.collision_t
+            hi = max(hi, lo)
+            unc = max(unc, (hi - lo) / 2)
         self.clusters.append(_Cluster(family=fam, key=self._key(o, fam), vehicles=_vehicles(o),
                                       attached=[o], placed_range=(lo, hi), placed_uncertainty=unc))
 

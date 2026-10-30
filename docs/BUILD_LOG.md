@@ -519,3 +519,21 @@ Audited each requirement line by running it (not reading it): `scripts/audit_sen
 Results: `pytest` **139 passed** (+15: bad-row file, 6 unit headers, unitless-flagged, epoch_ms guard, injection, order fallback, uncertainty/ambiguity, action labels + dedup, chunking, model-failure error); evaluation **32/32**; sensor audit 25/25; witness audit 14/14 on three consecutive live runs (the model is not deterministic, so one pass is not evidence).
 
 **Not covered / honest limits:** witness extraction is English-only in practice; prompt-injection defence is filtering + data framing, not a guarantee; unitless speed columns are a flagged assumption.
+
+## 2026-10-31 · Modules 3 + 4 audit (timeline, contradictions) against the requirements
+
+Audited by running every requirement line on hand-built observations (`scripts/audit_timeline_conflicts.py`, 42 checks, no key; also run by `tests/test_audit_timeline_conflicts.py`). Timeline: collecting from all sets (none lost), UTC / naive timestamp normalisation, chronological and input-order-independent output, correlating sensor+video into one event while keeping other vehicles and later repeats apart, grouping, valid JSON, inputs untouched. Contradictions: numeric (with lower/upper-bound claims), timestamp overlap, missing evidence, references to existing observations, no false alarms on consistent evidence, determinism, LLM pass skipped without a key.
+
+Everything the requirements list worked. Gaps found by probing beyond the demo, **fixed**:
+| Finding | Fix |
+| --- | --- |
+| Two sensors reporting different speeds for one vehicle (GPS vs OBD) were never compared | `source_speeds` rule: paired readings within the time tolerance, flagged when half or more differ by > 15 km/h (needs 3 pairs) |
+| Sensor and video placing the collision (or a vehicle's junction entry) 6 s apart produced two timeline events and no conflict: the overlap check only covered witness clock times | `source_event_times` rule (timestamp_overlap): windows (± uncertainty) must overlap within 1 s; high when 5 s apart |
+| Two witnesses naming different light colours with no log/footage to judge them were not compared | `witness_signals` rule (semantic): same approach, overlapping or unplaced windows, different witnesses |
+| A witness's order of arrival ("the red car first, then the white one") was never checked against the record | `event_order` rule (semantic): same action, two vehicles, record order reversed beyond uncertainty |
+| An untimed "came to rest after the collision" claim was placed at t = 0, before the collision | `_new_placed` (timeline): post-collision claims start at the collision time |
+
+Files: `modules/contradictions/rules.py`, `modules/timeline/__init__.py`, `scripts/audit_timeline_conflicts.py`, `tests/test_audit_timeline_conflicts.py`.
+- LLM pass (`contradictions/llm.py`): record lines now include `heading_deg`, and a log over 300 lines is thinned by dropping repetitive "moving" samples (events are kept), so the prompt stays bounded. Checked live: "stopped dead" against 60 km/h constant is flagged; a consistent statement is not. A "turned sharply right" claim against a constant heading is *not* flagged: the prompt is deliberately conservative (silence in the record is not a contradiction).
+- Results: `pytest` **140 passed**; evaluation **32/32** (twice; one earlier run failed "W1 says V2 never slowed" because the witness model labelled that sentence "accelerated" once: model non-determinism, not a rule change).
+
