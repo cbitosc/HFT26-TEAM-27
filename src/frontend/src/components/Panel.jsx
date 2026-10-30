@@ -19,3 +19,17 @@ export const SOURCE_STYLES = {
 export function SourceBadge({ type }) {
   return <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${SOURCE_STYLES[type] ?? 'bg-slate-100'}`}>{type}</span>
 }
+
+// Observation vs inference (problem statement requirement 5).
+const BASIS = {
+  measured: ['bg-emerald-50 text-emerald-700 ring-emerald-200', 'Read directly from a sensor or log'],
+  reported: ['bg-amber-50 text-amber-700 ring-amber-200', "A witness's statement"],
+  derived: ['bg-sky-50 text-sky-700 ring-sky-200', 'Computed by fixed rules (tracking, calibration, fusion)'],
+  inferred: ['bg-violet-50 text-violet-700 ring-violet-200', "An AI model's reading: verify"],
+}
+
+export function BasisBadge({ basis }) {
+  if (!basis || !BASIS[basis]) return null
+  const [cls, title] = BASIS[basis]
+  return <span title={title} className={`rounded px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset ${cls}`}>{basis}</span>
+}

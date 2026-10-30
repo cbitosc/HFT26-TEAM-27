@@ -54,13 +54,21 @@ and telemetry CSVs) and get one cited account of what happened:
   run history, and an append-only audit log.
 - **An investigator report** (Markdown/JSON) with citations, evidence gaps and an AI-drafted summary
   labelled as such. Sample: [`docs/sample_report/report.md`](docs/sample_report/report.md).
+- **Observation vs inference, everywhere.** Each item is labelled measured, reported, derived (fixed rules)
+  or inferred (AI), with the evidence it came from.
+- **Any footage, any format.** Dashcam (ego motion from optical flow) or fixed cameras (motion tracking,
+  calibration from declared lane markings), telemetry or GPS CSVs with auto-detected columns. Scenario
+  knowledge (vehicles, junction, marking standard) is declared per case, never built in.
+- **Measured, not assumed.** `scripts/evaluate.py` scores 5 deliberately different synthetic cases
+  against their answer keys: currently **27/27**.
 
 ### Quick start
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r src/backend/requirements.txt
 echo "FEATHERLESS_API_KEY=<your key>" > .env          # optional: enables video and witness analysis
-.venv/bin/python scripts/analyze.py data/witness/*.txt data/sensor/*.csv   # CLI -> reports/<run>/report.md
+.venv/bin/python scripts/analyze.py data/witness/*.txt data/sensor/*.csv --case data/case.json   # CLI -> reports/<run>/report.md
+.venv/bin/python scripts/evaluate.py                    # accuracy on the evaluation cases
 cd src/backend && ../../.venv/bin/uvicorn app.main:app --port 8000 --env-file ../../.env   # API: /docs
 ```
 

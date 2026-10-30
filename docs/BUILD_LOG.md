@@ -435,3 +435,41 @@ Headline, evidence table with hashes, timeline (t and clock), contradictions wit
 **Limits:** the automatic method assumes a level camera (no roll) and standard markings; speeds use distance along the road. Uncalibrated views need 4 measured points (e.g. lane-marking corners read off a map or a site survey).
 
 `pytest` **115 passed**; frontend build OK.
+
+## 2026-10-31 · Generalisation: nothing built in from the demo or one clip; measured on 5 diverse cases
+
+The request: don't overfit to one video; work for any footage (dashcam or not), any evidence format.
+
+### Scenario knowledge moved out of the code into case settings
+Removed from code: witness colour→id mapping (red=V1, white=V2), the "evening 17:00–19:00" prompt rule, telemetry unit `OBD-7731`→V2, the Main Rd × 5th Ave crossroads and its lane offsets (left-hand traffic), junction-box detection everywhere, the demo incident id and clock, the German marking standard default, the "V1" dashcam vehicle.
+Now declared per case via `PUT /api/incident` (schema 1.2.0): `vehicles[{id, description, aliases, ego}]`, `scene{type, traffic_side, roads, lane_width_m, junction_*}`, `lane_markings` (presets `de_motorway`, `de_urban`, `us_freeway`, or custom; `GET /api/incident/lane-presets`). The demo declares its own in `data/case.json` (written by `generate_sensor_data.py`).
+- t = 0: case setting, else **the earliest timestamp in the sensor evidence** (`config.REFERENCE_SOURCE`, shown in the report), else no clock times
+- Reconstruction: a **metric map sized to the data** unless a junction is declared; lane-default ("estimated") trajectories only at declared junctions; traffic side from the case
+
+### Observation vs inference (requirement 5)
+`Observation.basis` = measured / reported / derived / inferred, with `derived_from`; set at every creation site (sensor readings measured; thresholds, gaps, tracking, fusion derived; witnesses reported; vision-model findings inferred). Timeline events carry the strongest basis plus counts; conflicts `basis: rule|llm`; `TrackPoint.source` + `confidence` (measured / interpolated / extrapolated / tracked / estimated). The report has a basis column and legend; the dashboard shows basis badges.
+
+### Generic evidence handling
+- Sensor CSVs: time column found by name pattern **and values** (ISO, epoch s/ms, relative seconds; explicit names like `epoch_s` win); vehicle column by pattern (`device`, `tracker`, `imei`…); **GPS lat/lon → local metres** with one origin per run; speed and heading **computed from positions** when absent; unknown units keep their own id; the full measured path is kept (`action: "track"`, units m)
+- Fusion: **contact-collision rule** (paths within 5 m + abrupt speed drop or swerve) for rear-end impacts the swerve rule misses; **cross-source vehicle linking** (declared description → unique stated direction vs measured heading → shared provisional id `U-<colour>-<type>`), each link recorded
+- Contradictions: **opposing actions** (witness vs any source, incl. video; weaker when the record is an AI reading), **colour disagreements**, **coverage gaps** (no video/telemetry covering the collision, via `ObservationSet.coverage_s`), signal state from video when there is no controller log
+- Witness extraction: negated braking ("never slowed down" → `no_braking`), a speed inside a crash sentence becomes its own claim about the described vehicle
+- **Dashcam**: ego motion from adjacent-frame optical flow on a road band ahead (moving / braking / stopped / turning / jolt; relative, derived, no key needed); other vehicles: vision-model boxes linked across keyframes (inferred)
+- **Fixed cameras**: position = blob **road-contact point on the un-dilated mask** (centroid and dilation biased speeds 8–26 % low); edge-clipped points skipped for speed; straightness on the smoothed path; 10 Hz points. Calibration needs a declared standard
+
+### Evaluation harness (the guard against overfitting)
+`scripts/synthetic.py` renders a dashcam drive and a fixed-camera road with exactly known motion. `scripts/make_cases.py` builds `eval/cases/`:
+
+| Case | What it stresses |
+|---|---|
+| junction_side_impact | demo: telemetry + signal log + 2 witnesses |
+| gps_rear_end | India, left-hand traffic, GPS lat/lon, Unix seconds, a file with no speed/heading, no declared junction, t = 0 from evidence, rear-end impact |
+| cctv_motorway_speeds | fixed camera, 3 vehicles at 100/80/120 km/h, de_motorway declared |
+| cctv_no_standard | same video, no standard: must refuse km/h |
+| dashcam_brake | ego car brakes at 4.0 s, stops at 6.5 s; witness says it never slowed |
+
+`scripts/evaluate.py` scores events (time tolerance), collision, contradictions, calibration and speeds. **Result: 27/27** with the LLM (20/20 deterministic without). Highlights: speeds 96 / 79 / 118 vs 100 / 80 / 120 km/h; dashcam braking 4.2 s (true 4.0), stop 6.4 s (6.5); GPS rear-end collision 10.5 s (10.6), inferred from the paths.
+
+**Every failure the harness found was an assumption from the demo or the one real clip:** exact column names, the tracker's centroid/dilation bias, the 2 s warm-up vs short clips, jitter-sensitive straightness, the speed sitting on the crash claim, "never slowed" read as "moving". Real clip after all fixes: 123 tracks (was 105); view 2 median 110 km/h. **Note:** the real clip's case no longer has a lane-marking standard by default, so its view 2 is no longer calibrated until `lane_markings` is declared.
+
+`pytest` **123 passed**; frontend build OK.

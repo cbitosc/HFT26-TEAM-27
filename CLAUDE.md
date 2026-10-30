@@ -34,7 +34,9 @@ npm --prefix src/frontend install && npm --prefix src/frontend run dev   # http:
 .venv/bin/python scripts/generate_sensor_data.py   # regenerate data/ from scenario.py
 .venv/bin/python scripts/generate_witness_statements.py
 .venv/bin/python scripts/export_schemas.py         # after any schemas.py change
-.venv/bin/python scripts/analyze.py data/witness/*.txt data/sensor/*.csv   # CLI: analyse files -> reports/<run>/report.md
+.venv/bin/python scripts/analyze.py data/witness/*.txt data/sensor/*.csv --case data/case.json   # CLI -> reports/<run>/report.md
+cd scripts && ../.venv/bin/python make_cases.py && cd ..    # build eval/cases (synthetic, with answer keys)
+.venv/bin/python scripts/evaluate.py [--no-llm]             # score every case; must stay all-pass
 ```
 
 ## Rules
@@ -42,7 +44,9 @@ npm --prefix src/frontend install && npm --prefix src/frontend run dev   # http:
 - **The contract is `schemas.py`.** Don't change a field without following docs/contracts/INTEGRATION_CONTRACT.md. A contract change updates schemas, fixtures, exported schemas and frontend together.
 - **Stay in your module.** Each parallel agent owns one folder (see docs/contracts/HANDOFF_CONTRACT.md). Implement the existing stub function and keep its signature. Don't edit `pipeline.py` to wire your module in; it already calls it.
 - **Fixtures are frozen examples.** Don't edit them to make your module's tests pass. If the contract really changes, update them on purpose.
-- **Ground truth is `scripts/scenario.py`.** V1 red sedan northbound, V2 white SUV eastbound, collision at t=10.0 s at (-1.75, 1.75). Reference time is 2026-10-12 17:42:00 IST. Use it as the test oracle.
+- **No scenario knowledge in code.** Vehicle names, junctions, traffic side, lane-marking standards and clocks are case settings (`PUT /api/incident`, see INTEGRATION_CONTRACT). The demo declares its own in `data/case.json`; tests that use demo data load it with the `demo_case` fixture.
+- **Judge changes on all evaluation cases, not one clip.** `scripts/make_cases.py` builds `eval/cases/*` (diverse synthetic cases with answer keys); `scripts/evaluate.py` scores them. A change that helps one case and breaks another is a regression. Add a case when you add a capability.
+- **Never guess what can't be known.** No marking standard → no calibration; no reference time → no clock times; an AI model's reading is labelled `inferred`, never presented as measured.
 - Time is `t_rel_s` (seconds from reference). Space is metres with +x east, +y north. Speed is km/h.
 - Featherless keys come from env (`FEATHERLESS_API_KEY`) via `app.config` and never get committed. With no key, modules must degrade gracefully.
 - Log every change: add an entry to `docs/BUILD_LOG.md` listing what changed, which files, and why.

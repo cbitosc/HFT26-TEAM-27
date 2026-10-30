@@ -35,7 +35,9 @@ export default function ContradictionExplorer({ report, observationsById, onFocu
             <button onClick={() => toggle(c)} className="w-full p-2 text-left">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-medium">{c.title}</span>
-                <span className="shrink-0 text-[10px] uppercase text-slate-400">{c.type.replace('_', ' ')}</span>
+                <span className="shrink-0 text-[10px] uppercase text-slate-400">
+                  {c.type.replace('_', ' ')}{c.basis === 'llm' ? ' · AI-detected' : ' · rule'}
+                </span>
               </div>
               <p className="mt-1 text-xs text-slate-600">{c.description}</p>
             </button>

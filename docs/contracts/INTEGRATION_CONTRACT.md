@@ -1,6 +1,6 @@
 # Integration contract
 
-**Source of truth:** [`src/backend/app/schemas.py`](../../src/backend/app/schemas.py) (schema version `1.1.0`).
+**Source of truth:** [`src/backend/app/schemas.py`](../../src/backend/app/schemas.py) (schema version `1.2.0`).
 JSON Schema copies live in [`schemas/`](schemas/). Regenerate them with `python scripts/export_schemas.py`.
 Example payloads for every shape are in [`/fixtures`](../../fixtures).
 
@@ -20,14 +20,34 @@ upload ──► Evidence ──► [1] analyze_video    ─┐
                                              [6] Dashboard (React) via /api
 ```
 
+## Case settings: scenario knowledge lives here, never in code
+
+`PUT /api/incident` declares what the investigator knows. With nothing declared, **nothing is assumed**:
+no junction, no vehicle names, no lane-marking standard, no clock.
+
+| Setting | Effect |
+| --- | --- |
+| `reference_time` | t = 0. If unset, the earliest absolute timestamp in the sensor evidence is used (the report says so). With neither, clock times are not shown |
+| `vehicles[{id, description, aliases, ego}]` | Telemetry units (aliases) and witness/video descriptions are linked to these ids. `ego: true` marks the dashcam car |
+| `scene{type: unknown\|junction\|road, traffic_side, roads, lane_width_m, junction_center_m, junction_radius_m}` | Only a declared junction gets "enters the junction" events, a drawn crossroads and lane-default trajectories |
+| `lane_markings` (`de_motorway`, `de_urban`, `us_freeway` or `{dash_m, gap_m, lane_width_m}`) | Required for automatic camera calibration; without it, no km/h from video |
+
+## Observation vs inference (`basis`)
+
+Every observation has `basis`: **measured** (read from a sensor or log), **reported** (a witness), **derived**
+(computed by deterministic rules: tracking, calibration, fusion, thresholds) or **inferred** (an AI model's
+reading). Derived observations list `derived_from`. Timeline events carry the strongest basis behind them and
+`basis_counts`; conflicts carry `basis: rule | llm`; track points carry `source` (measured / interpolated /
+extrapolated / tracked / estimated) and `confidence`.
+
 ## Shared conventions
 
 | Concept | Rule |
 | --- | --- |
 | Time | `t_rel_s` = seconds from the incident reference time (`Timeline.reference_time`). Absolute times are ISO-8601 with an offset (the demo uses IST, `+05:30`). Unknown → `null`, never a guess. |
 | Uncertainty | `time_uncertainty_s` / `uncertainty_s` = ± seconds. `confidence` is 0–1. |
-| Space | Metres, origin = intersection centre, +x east, +y north. `heading_deg`: 0 = north, clockwise. |
-| Vehicle ids | Canonical `V1`, `V2`, … Witness/video observations that can't be resolved use `vehicle_id: null` and put the text in `vehicle_description`. |
+| Space | Metres, +x east, +y north (GPS is converted to local metres around one origin per run; a declared junction is centred at its `junction_center_m`). `heading_deg`: 0 = north, clockwise. Camera scenes are in image pixels. |
+| Vehicle ids | Declared case ids (or a telemetry unit's own id). Undeclared descriptions get a provisional `U-<colour>-<type>` shared across sources; unresolvable ones stay `null` with the text in `vehicle_description`. Links are recorded in `attributes.vehicle_link`. |
 | Speed | Always `attributes.speed_kmh`. Keep the raw value in `speed_<unit>_raw` if you converted. |
 | Source refs | Every observation has `source_ref.locator`: `frame:<n>` (video), `line:<n>` (witness), `row:<n>` / `rows:<a>-<b>` (CSV, 1-based incl. header). |
 | Ids | Observations `vid_*`, `wit_*`, `sen_*`, `sig_*`; events `evt_*`; conflicts `cf_*`. Unique within a run. |

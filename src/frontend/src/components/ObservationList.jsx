@@ -1,5 +1,5 @@
 import { frameUrl } from '../api'
-import { SourceBadge } from './Panel'
+import { BasisBadge, SourceBadge } from './Panel'
 
 // The evidence behind an event or conflict: source, where it came from, what it says,
 // and the actual video frame when there is one.
@@ -25,6 +25,7 @@ export default function ObservationList({ ids, observationsById }) {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">
                 <SourceBadge type={o.source_type} />
+                <BasisBadge basis={o.basis} />
                 <span className="font-medium text-slate-700">{what}</span>
                 {o.t_rel_s != null && <span className="text-slate-400">t={o.t_rel_s}s</span>}
                 <span className="text-slate-400">conf {Math.round(o.confidence * 100)}%</span>

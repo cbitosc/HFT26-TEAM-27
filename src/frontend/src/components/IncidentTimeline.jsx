@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import ObservationList from './ObservationList'
-import Panel, { SourceBadge } from './Panel'
+import Panel, { BasisBadge, SourceBadge } from './Panel'
 
 const CATEGORY_COLORS = {
   vehicle_motion: 'bg-blue-500',
@@ -44,6 +44,7 @@ export default function IncidentTimeline({ timeline, time, selectedObs, onFocus,
                   t={e.t_start_s}s{e.t_end_s !== e.t_start_s && `–${e.t_end_s}s`}
                   {e.uncertainty_s > 0 && ` ±${e.uncertainty_s}s`}
                   {e.source_types.map((s) => <SourceBadge key={s} type={s} />)}
+                  <BasisBadge basis={e.basis} />
                 </div>
               </div>
               <div className="relative h-3 w-full flex-1 rounded bg-slate-100" title={`confidence ${e.confidence}`}>
