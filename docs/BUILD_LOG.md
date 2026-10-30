@@ -537,3 +537,19 @@ Files: `modules/contradictions/rules.py`, `modules/timeline/__init__.py`, `scrip
 - LLM pass (`contradictions/llm.py`): record lines now include `heading_deg`, and a log over 300 lines is thinned by dropping repetitive "moving" samples (events are kept), so the prompt stays bounded. Checked live: "stopped dead" against 60 km/h constant is flagged; a consistent statement is not. A "turned sharply right" claim against a constant heading is *not* flagged: the prompt is deliberately conservative (silence in the record is not a contradiction).
 - Results: `pytest` **140 passed**; evaluation **32/32** (twice; one earlier run failed "W1 says V2 never slowed" because the witness model labelled that sentence "accelerated" once: model non-determinism, not a rule change).
 
+## 2026-10-31 · Module 5 (trajectory reconstruction + visualisation) against its requirements, end to end
+
+Requirements: predefined intersection, vehicle positions over time, estimated trajectories, collision marker only if supported, time slider, animation, output = JSON of ids and positions. Most already existed (declared-junction scene, 0.5 s tracks with measured/interpolated/extrapolated/estimated basis, closest-approach collision marker, slider + play). Tested through the whole workflow: upload -> run -> `/api/reconstruction` -> browser replay.
+
+Added / fixed:
+| Item | Change |
+| --- | --- |
+| **Output "a json file on id and positions"** was missing: only the nested `Reconstruction` model existed | `positions_export()` (`modules/reconstruction/__init__.py`), `GET /api/reconstruction/positions[?download=true]`, "Download positions (JSON)" button, `positions.json` written by `scripts/analyze.py`. Each position carries its `basis` and `confidence`; a `coordinate_system` block states units and axes |
+| Replay controls | Step back / forward (one grid step, clamped), playback speed 0.25-4x, impact tick on the slider, space / arrow keys, legend says "interpolated / estimated" |
+| **Bug found in the browser test:** switching case on a running server kept the previous case's `reference_time`, so a GPS case showed t = -3,400,000 s | `PUT /api/incident` with `"reference_time": null` clears it (`config.apply_incident`, `routers/incident.py`); absent leaves it unchanged. Documented in INTEGRATION_CONTRACT |
+| Dev tooling | `vite.config.js` proxy target can be set with `API_TARGET` (to test against a second backend without touching the user's storage) |
+
+Tests (`tests/test_workflow_reconstruction.py`, real sensor extractors, no key): positions follow `scenario.py` ground truth to within 1 m at every step, collision within 0.5 s / 2 m with supporting observation ids, the export equals what the map draws, a 0.5 s grid covers the slider window with no holes, one vehicle alone gives no collision marker, empty evidence gives a valid empty export, null clears the clock. Browser check (isolated backend + dashboard on other ports): run, play (1x ~ real time; 4x faster), slider, step, impact frame, download header + JSON, and a non-junction GPS case (plain metric map). `pytest` **146 passed**; frontend build OK.
+
+Not done: Plotly (optional in the brief; the SVG viewer covers it); trajectories from video remain the separate camera path (calibration needed).
+

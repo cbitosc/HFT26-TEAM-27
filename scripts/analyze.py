@@ -82,6 +82,7 @@ def main() -> int:
     for artifact in ("run", "observations", "timeline", "conflicts", "reconstruction"):
         data = client.get(f"/api/runs/{run['run_id']}/{artifact}").json()
         (out / f"{artifact}.json").write_text(json.dumps(data, indent=2))
+    (out / "positions.json").write_text(json.dumps(client.get("/api/reconstruction/positions").json(), indent=2))
     print(f"\n{report['headline']}\nReport: {out / 'report.md'}")
     return 0
 

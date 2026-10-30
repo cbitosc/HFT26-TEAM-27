@@ -25,6 +25,7 @@ export const api = {
   timeline: () => request('/timeline'),
   conflicts: () => request('/conflicts'),
   reconstruction: () => request('/reconstruction'),
+  positionsUrl: '/api/reconstruction/positions?download=true',
   eventAnalysis: () => request('/event-analysis'),
 }
 

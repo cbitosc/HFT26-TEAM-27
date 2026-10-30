@@ -13,6 +13,7 @@ const APPROACHES = {
 }
 // Half-width of the view in metres: auto follows the vehicles, full shows the whole scene.
 const ZOOMS = { auto: null, junction: 18, full: null }
+const SPEEDS = [0.25, 0.5, 1, 2, 4]
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v)
 
 // Linear interpolation of a vehicle's track at time t.
@@ -93,6 +94,9 @@ function layoutLabels(items, fontSize) {
 export default function ReconstructionViewer({ data, time, onTimeChange }) {
   const [playing, setPlaying] = useState(false)
   const [zoom, setZoom] = useState('auto')
+  const [rate, setRate] = useState(1)
+  const rateRef = useRef(1)
+  useEffect(() => { rateRef.current = rate }, [rate])
   const [observations, setObservations] = useState(null)
   const timeRef = useRef(time)
   useEffect(() => { timeRef.current = time }, [time])
@@ -112,7 +116,7 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
     let frame
     let last = performance.now()
     const tick = (now) => {
-      const next = timeRef.current + (now - last) / 1000
+      const next = timeRef.current + ((now - last) / 1000) * rateRef.current
       last = now
       if (next >= data.t_max_s) {
         onTimeChange(data.t_max_s)
@@ -167,6 +171,18 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
   const showCollision = data.collision && time >= data.collision.t_s - 1e-6
 
   const isMeasured = (vid, t) => !derived.known || derived.measured[vid].some((m) => Math.abs(m - t) < 0.01)
+
+  const step = (dir) => {
+    setPlaying(false)
+    const grid = data.vehicles[0].track.map((q) => q.t_s)
+    const nxt = dir > 0 ? grid.find((g) => g > time + 1e-6) : [...grid].reverse().find((g) => g < time - 1e-6)
+    onTimeChange(nxt ?? (dir > 0 ? data.t_max_s : data.t_min_s))
+  }
+  const onKey = (e) => {
+    if (e.key === 'ArrowRight') { e.preventDefault(); step(1) }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1) }
+    else if (e.key === ' ') { e.preventDefault(); togglePlay() }
+  }
 
   const togglePlay = () => {
     if (!playing && time >= data.t_max_s) onTimeChange(data.t_min_s)
@@ -278,12 +294,24 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
         ))}
       </svg>
 
-      <div className="mt-3 flex items-center gap-3">
+      <div className="mt-3 flex items-center gap-2" tabIndex={0} onKeyDown={onKey} aria-label="Replay controls">
+        <button onClick={() => step(-1)} aria-label="Step back" className="rounded border border-slate-200 px-2 py-1 text-xs">◀</button>
         <button onClick={togglePlay} className="w-16 rounded bg-slate-900 px-2 py-1 text-xs font-medium text-white">
           {playing ? 'Pause' : 'Play'}
         </button>
-        <input type="range" min={data.t_min_s} max={data.t_max_s} step={0.1} value={time}
-          onChange={(e) => { setPlaying(false); onTimeChange(Number(e.target.value)) }} className="flex-1" />
+        <button onClick={() => step(1)} aria-label="Step forward" className="rounded border border-slate-200 px-2 py-1 text-xs">▶</button>
+        <div className="relative flex-1">
+          <input type="range" min={data.t_min_s} max={data.t_max_s} step={0.1} value={time} aria-label="Time"
+            onChange={(e) => { setPlaying(false); onTimeChange(Number(e.target.value)) }} className="w-full" />
+          {data.collision && data.t_max_s > data.t_min_s && (
+            <span title={`impact t=${data.collision.t_s}s`} className="pointer-events-none absolute top-5 -translate-x-1/2 text-[10px] leading-none text-red-600"
+              style={{ left: `${((data.collision.t_s - data.t_min_s) / (data.t_max_s - data.t_min_s)) * 100}%` }}>▲ impact</span>
+          )}
+        </div>
+        <select value={rate} onChange={(e) => setRate(Number(e.target.value))} aria-label="Playback speed"
+          className="rounded border border-slate-200 bg-white px-1 py-1 text-xs">
+          {SPEEDS.map((r) => <option key={r} value={r}>{r}×</option>)}
+        </select>
         <span className="w-16 text-right font-mono text-xs">t={time.toFixed(1)}s</span>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-600">
@@ -295,9 +323,12 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
         {derived.known && (
           <span className="flex items-center gap-2 text-slate-500">
             <svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="#475569" strokeWidth="2" /></svg>measured
-            <svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="#475569" strokeWidth="2" strokeDasharray="4 3" /></svg>interpolated
+            <svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="#475569" strokeWidth="2" strokeDasharray="4 3" /></svg>interpolated / estimated
           </span>
         )}
+        <a href={api.positionsUrl} className="ml-auto rounded border border-slate-200 px-2 py-0.5 text-slate-600 hover:bg-slate-50">
+          Download positions (JSON)
+        </a>
         {data.collision && <span className="text-red-600">✕ collision at t={data.collision.t_s}s (conf {data.collision.confidence})</span>}
       </div>
       {signalNow.length > 0 && (

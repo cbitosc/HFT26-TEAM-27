@@ -41,3 +41,39 @@ def build_reconstruction(
 def build_event_analysis(observation_sets: list[ObservationSet], timeline: Timeline) -> Reconstruction | None:
     """Camera footage with detections and tracks in image pixels, or None without video tracks."""
     return reconstruct_from_camera(observation_sets, timeline)
+
+
+def positions_export(rec: Reconstruction) -> dict:
+    """The reconstruction as a plain "id and positions" JSON: one list of timed positions per vehicle.
+
+    Metres (+x east, +y north) for a top-down scene, pixels (+y down) for a camera scene; `basis` says whether
+    a position was measured, interpolated, extrapolated, tracked or estimated, so nothing reads as more certain
+    than it is.
+    """
+    px = rec.scene.units == "px"
+    return {
+        "incident_id": rec.incident_id,
+        "generated_at": rec.generated_at.isoformat(),
+        "coordinate_system": {
+            "units": rec.scene.units,
+            "x": "pixels from the left of the camera frame" if px else "metres east of the origin",
+            "y": "pixels down from the top of the camera frame" if px else "metres north of the origin",
+            "heading_deg": "0 = north, clockwise" if not px else "image-space",
+            "time": "seconds from the incident reference time (t_rel_s)",
+            "scene": rec.scene.type,
+        },
+        "t_min_s": rec.t_min_s,
+        "t_max_s": rec.t_max_s,
+        "vehicles": [
+            {"id": v.vehicle_id, "label": v.label, "description": v.description,
+             "positions": [{"t_s": p.t_s, "x": p.x_m, "y": p.y_m, "heading_deg": p.heading_deg,
+                            "speed_kmh": p.speed_kmh, "basis": p.source, "confidence": p.confidence}
+                           for p in v.track],
+             "source_observation_ids": v.source_observation_ids}
+            for v in rec.vehicles],
+        "collision": None if rec.collision is None else {
+            "t_s": rec.collision.t_s, "x": rec.collision.x_m, "y": rec.collision.y_m,
+            "confidence": rec.collision.confidence,
+            "supporting_observation_ids": rec.collision.supporting_observation_ids},
+        "note": rec.note,
+    }

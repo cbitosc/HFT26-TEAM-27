@@ -6,11 +6,12 @@ always has something to render.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from app import store
 from app.report import build_report
 from app.jobs import jobs
+from app.modules.reconstruction import positions_export
 from app.pipeline import RunInProgress, run_analysis
 from app.schemas import (AnalysisJob, AnalysisRun, AuditEvent, ConflictReport, IncidentReport, ObservationSet,
                          Reconstruction, Timeline)
@@ -118,3 +119,12 @@ def event_analysis():
 @router.get("/reconstruction", response_model=Reconstruction)
 def reconstruction():
     return store.load_output("reconstruction.json") or store.load_fixture("reconstruction.json", Reconstruction)
+
+
+@router.get("/reconstruction/positions")
+def reconstruction_positions(download: bool = False):
+    """Vehicle ids and their timed positions as a plain JSON file (`download=true` sets a file name)."""
+    stored = store.load_output("reconstruction.json")
+    rec = Reconstruction.model_validate(stored) if stored else store.load_fixture("reconstruction.json", Reconstruction)
+    headers = {"Content-Disposition": 'attachment; filename="vehicle_positions.json"'} if download else None
+    return JSONResponse(positions_export(rec), headers=headers)

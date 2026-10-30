@@ -57,6 +57,9 @@ def apply_incident(data: dict) -> None:
         INCIDENT_REFERENCE_TIME = datetime.fromisoformat(str(data["reference_time"]))
         REFERENCE_TIME_CONFIRMED = True
         REFERENCE_SOURCE = "case"
+    elif "reference_time" in data:  # an explicit null clears it: t = 0 comes from the evidence again
+        REFERENCE_TIME_CONFIRMED = False
+        REFERENCE_SOURCE = "default"
     if "vehicles" in data:
         CASE_VEHICLES = list(data["vehicles"] or [])
     if "scene" in data:

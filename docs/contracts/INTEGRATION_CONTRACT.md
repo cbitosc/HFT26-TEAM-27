@@ -30,6 +30,7 @@ no junction, no vehicle names, no lane-marking standard, no clock.
 | `reference_time` | t = 0. If unset, the earliest absolute timestamp in the sensor evidence is used (the report says so). With neither, clock times are not shown |
 | `vehicles[{id, description, aliases, ego}]` | Telemetry units (aliases) and witness/video descriptions are linked to these ids. `ego: true` marks the dashcam car |
 | `scene{type: unknown\|junction\|road, traffic_side, roads, lane_width_m, junction_center_m, junction_radius_m}` | Only a declared junction gets "enters the junction" events, a drawn crossroads and lane-default trajectories |
+| `reference_time: null` | An explicit null clears a previously declared clock (switching case): t = 0 comes from the evidence again. Leaving the field out leaves it unchanged |
 | `lane_markings` (`de_motorway`, `de_urban`, `us_freeway` or `{dash_m, gap_m, lane_width_m}`) | Required for automatic camera calibration; without it, no km/h from video |
 
 ## Observation vs inference (`basis`)
@@ -86,6 +87,7 @@ extrapolated / tracked / estimated) and `confidence`.
 | GET | `/api/timeline` | `Timeline` |
 | GET | `/api/conflicts` | `ConflictReport` |
 | GET | `/api/reconstruction` | `Reconstruction`: the **top-down map in metres** (sensor/GPS paths, else a calibrated camera view on the road plane, else empty with `note` saying what evidence is missing) |
+| GET | `/api/reconstruction/positions?download=false` | The same reconstruction as a plain "id and positions" JSON: `vehicles[{id, label, positions[{t_s, x, y, heading_deg, speed_kmh, basis, confidence}]}]`, `collision{t_s, x, y, confidence}`, and a `coordinate_system` block (metres +x east / +y north, or camera pixels). `download=true` sends it as `vehicle_positions.json` |
 | GET | `/api/event-analysis` | `Reconstruction` with a `camera_image` scene: footage with detections and image-space tracks (pixels), or `null` without video tracks |
 
 Before the first run, the GET endpoints serve fixtures.

@@ -36,6 +36,8 @@ def update_incident(update: IncidentUpdate) -> IncidentInfo:
     if update.reference_time is not None and update.reference_time.tzinfo is None:
         raise HTTPException(422, "reference_time needs a UTC offset, e.g. 2026-10-12T17:42:00+05:30")
     changes = update.model_dump(exclude_none=True, mode="json")
+    if "reference_time" in update.model_fields_set and update.reference_time is None:
+        changes["reference_time"] = None  # explicit null: forget the clock, t = 0 comes from the evidence again
     ids = [v["id"] for v in changes.get("vehicles", [])]
     if len(ids) != len(set(ids)):
         raise HTTPException(422, "vehicle ids must be unique")
