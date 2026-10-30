@@ -124,8 +124,8 @@ def test_llm_pass_filters_unknown_ids(monkeypatch):
 
         def json(self):
             content = ('{"conflicts": ['
-                       '{"witness_observation_id": "wit_w1_04", "record_observation_ids": ["sen_v2_002", "bogus"],'
-                       ' "severity": "low", "title": "V2 did brake", "description": "OBD shows braking at 9.5 s."},'
+                       '{"witness_observation_id": "wit_w2_02", "record_observation_ids": ["sig_001", "bogus"],'
+                       ' "severity": "low", "title": "Yellow timing", "description": "Controller shows yellow."},'
                        '{"witness_observation_id": "made_up", "record_observation_ids": [], "title": "x"}]}')
             return {"choices": [{"message": {"content": content}}]}
 
@@ -133,7 +133,15 @@ def test_llm_pass_filters_unknown_ids(monkeypatch):
     monkeypatch.setattr(httpx, "post", lambda *a, **k: Resp())
     report = detect_conflicts(*_inputs())
     llm = [c for c in report.conflicts if c.details.get("method") == "llm_semantic"]
-    assert [c.observation_ids for c in llm] == [["wit_w1_04", "sen_v2_002"]]
+    assert [c.observation_ids for c in llm] == [["wit_w2_02", "sig_001"]]
+    assert all(c.basis == "llm" for c in llm)
+
+
+def test_witness_no_braking_claim_vs_measured_braking(report):
+    """W1: 'the SUV did not slow down at all' vs V2 braking on its telemetry just before impact."""
+    c = _find(report, ConflictType.semantic, "wit_w1_04", "sen_v2_002")
+    assert c.details["method"] == "rule:opposing_action" and c.basis == "rule"
+    assert c.severity == Severity.medium  # the record is measured, not an AI reading
 
 
 def test_llm_failure_falls_back_to_rules(monkeypatch):
@@ -146,7 +154,7 @@ def test_llm_failure_falls_back_to_rules(monkeypatch):
     monkeypatch.setattr(httpx, "post", boom)
     rules_only = detect_conflicts(*_inputs())
     monkeypatch.setattr(config, "FEATHERLESS_API_KEY", "")
-    assert len(rules_only.conflicts) == len(detect_conflicts(*_inputs()).conflicts) == 7
+    assert len(rules_only.conflicts) == len(detect_conflicts(*_inputs()).conflicts) == 8
 
 
 def test_dashcam_ego_lane_signal_maps_to_ego_approach():

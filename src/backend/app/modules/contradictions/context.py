@@ -41,6 +41,8 @@ class Context:
     timeline: Timeline
     by_id: dict[str, Observation] = field(default_factory=dict)
     events_by_obs: dict[str, list[TimelineEvent]] = field(default_factory=dict)
+    # (source type, file, vehicle ids it measures, (t0, t1)) for every set that states its coverage
+    coverage: list[tuple[SourceType, str, set[str], tuple[float, float]]] = field(default_factory=list)
 
     @classmethod
     def build(cls, observation_sets: list[ObservationSet], timeline: Timeline) -> "Context":
@@ -54,6 +56,10 @@ class Context:
                     seen.add(o.id)
                     obs.append(o)
         ctx = cls(observations=obs, timeline=timeline)
+        for s in observation_sets:
+            if s.coverage_s and s.observations:
+                vids = {o.vehicle_id for o in s.observations if o.vehicle_id}
+                ctx.coverage.append((s.source_type, s.observations[0].source_ref.file, vids, tuple(s.coverage_s)))
         ctx.by_id = {o.id: o for o in obs}
         for e in timeline.events:
             for oid in e.observation_ids:

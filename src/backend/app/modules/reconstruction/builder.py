@@ -148,6 +148,14 @@ def _half_ceil(t: float) -> float:
 def _keyframes(observations: list[Observation], ref: datetime) -> dict[str, list[Keyframe]]:
     best: dict[tuple[str, float], Keyframe] = {}
     for o in observations:
+        if o.action == "track" and o.attributes.get("units") == "m" and o.vehicle_id:
+            for t, x, y, spd, hdg in (p + [None] * (5 - len(p)) for p in o.attributes.get("points", [])):
+                kf = Keyframe(float(t), float(x), float(y), _num(hdg), None if spd is None else float(spd) / KMH,
+                              o.id, o.confidence)
+                key = (o.vehicle_id, round(float(t), 2))
+                if key not in best or kf.confidence > best[key].confidence:
+                    best[key] = kf
+            continue
         x, y = _num(o.attributes.get("x_m")), _num(o.attributes.get("y_m"))
         t = _t_rel(o, ref)
         if not o.vehicle_id or x is None or y is None or t is None:

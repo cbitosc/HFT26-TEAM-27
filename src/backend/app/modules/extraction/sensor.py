@@ -97,6 +97,7 @@ class _Builder:
         self.observations: list[Observation] = []
         self.warnings: list[str] = []
         self._counters: dict[str, int] = {}
+        self.coverage: list[float] = []
 
     def next_id(self, prefix: str, width: int = 3) -> str:
         n = self._counters.get(prefix, 0) + 1
@@ -104,7 +105,7 @@ class _Builder:
         return f"{prefix}_{n:0{width}d}"
 
     # Read straight off the file vs computed from several rows (thresholds, differences, gaps).
-    MEASURED = {"moving", "signal_state", "stopped"}
+    MEASURED = {"moving", "signal_state", "stopped", "track"}
 
     def add(self, obs_id: str, locator: str, ts: pd.Timestamp, t_rel: float, action: str, *,
             vehicle_id=None, description=None, attributes=None, confidence=1.0, uncertainty=0.0):
@@ -144,6 +145,8 @@ def _with_time(df: pd.DataFrame, b: _Builder) -> pd.DataFrame:
                           f"(rows {', '.join(map(str, df.loc[bad, '_row']))}).")
     df = df.loc[~bad].sort_values("_ts", kind="stable").reset_index(drop=True)
     df["_t"] = (df["_ts"] - pd.Timestamp(config.INCIDENT_REFERENCE_TIME)).dt.total_seconds().round(3)
+    if len(df):
+        b.coverage += [float(df["_t"].min()), float(df["_t"].max())]
     return df
 
 
@@ -283,6 +286,17 @@ def _extract_track(track: pd.DataFrame, b: _Builder, vid: str | None, desc: str 
 
     for _, _, emit in sorted(events, key=lambda e: (e[0], e[1])):
         emit()
+
+    # The whole measured path, for trajectories and cross-vehicle checks (contact, closest approach).
+    if cols["x"] and cols["y"]:
+        pts = [[round(t[i], 3), _round(xs[i]), _round(ys[i]), _round(spd[i], 1), _round(hdg[i], 1)]
+               for i in range(len(t)) if _round(xs[i]) is not None and _round(ys[i]) is not None]
+        if len(pts) >= 2:
+            stride = max(1, len(pts) // 2000)
+            pts = pts[::stride] + ([pts[-1]] if (len(pts) - 1) % stride else [])
+            b.add(b.next_id(f"{prefix}_path", 2), _row_locator(row[0], row[-1]), ts[0], t[0], "track",
+                  vehicle_id=vid, description=desc, confidence=0.98,
+                  attributes={"units": "m", "points": pts, "point_fields": ["t", "x_m", "y_m", "speed_kmh", "heading_deg"]})
 
 
 # ------------------------------------------------------ video-derived series
@@ -491,7 +505,8 @@ def extract_sensor(evidence: Evidence) -> ObservationSet:
     b.observations.sort(key=lambda o: (o.t_rel_s if o.t_rel_s is not None else float("inf")))
     return ObservationSet(source_type=SourceType.sensor, evidence_id=evidence.id, producer=PRODUCER,
                           generated_at=datetime.now(timezone.utc), observations=b.observations,
-                          warnings=b.warnings)
+                          warnings=b.warnings,
+                          coverage_s=(min(b.coverage), max(b.coverage)) if b.coverage else None)
 
 
 def scan_csv(path: str) -> dict:

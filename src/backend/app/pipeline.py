@@ -26,7 +26,7 @@ from typing import Callable, Protocol
 from app import config, store
 from app.modules.contradictions import detect_conflicts
 from app.modules.extraction import extract_sensor, extract_witness
-from app.modules.fusion import fuse
+from app.modules.fusion import fuse, resolve_entities
 from app.modules.ingestion import analyze_video
 from app.modules.reconstruction import build_reconstruction
 from app.modules.timeline import build_timeline
@@ -209,9 +209,10 @@ def _run(tracker: Tracker) -> AnalysisRun:
         tracker.start(later[0])
         t0 = time.perf_counter()
         try:
+            observation_sets, link_notes = resolve_entities(observation_sets)
             fused = fuse(observation_sets)
             r = StageResult(stage=later[0], status="real",
-                            message="; ".join(fused.warnings) if fused else "nothing to infer")
+                            message="; ".join(link_notes + (fused.warnings if fused else [])) or "nothing to infer")
             if fused:
                 observation_sets.append(fused)
         except Exception as e:

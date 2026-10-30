@@ -86,6 +86,8 @@ class ObservationSet(BaseModel):
     generated_at: datetime
     observations: list[Observation]
     warnings: list[str] = Field(default_factory=list)
+    coverage_s: tuple[float, float] | None = Field(
+        None, description="Time span (t_rel_s) the evidence covers; lets gaps in coverage be detected")
 
 
 # ------------------------------------------------------- module 3: timeline

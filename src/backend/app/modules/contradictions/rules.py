@@ -153,9 +153,13 @@ def clock_times(ctx: Context) -> list[dict]:
 # ----------------------------------------------------------------- semantic
 
 def _signal_phase(ctx: Context, approach: str, t: float):
-    """(state, obs, phase_start, phase_end) from the controller log at time t, or None."""
+    """(state, obs, phase_start, phase_end) at time t from the controller log, or, when there is no log
+    for that approach, from video readings of the signal (an AI reading: see the obs basis)."""
     log = ctx.timed(lambda o: o.source_type == SourceType.sensor and o.action == "signal_state"
                     and o.attributes.get("approach") == approach)
+    if not log:
+        log = ctx.timed(lambda o: o.source_type == SourceType.video and o.action == "signal_state"
+                        and ctx.normalise_approach(o.attributes.get("approach")) == approach)
     current = None
     for i, s in enumerate(log):
         if ctx.t_of(s) <= t:
@@ -208,11 +212,13 @@ def signal_states(ctx: Context) -> list[dict]:
             if o.vehicle_id and (entry := ctx.entry_t(o.vehicle_id)):
                 entered = f" {o.vehicle_id} entered the junction at t≈{entry[0]:g} s."
             right_of_way = {claimed, state} & {"red"} or {claimed, state} == {"green", "yellow"}
+            from_video = ref.source_type == SourceType.video
+            record = "the camera footage (AI reading of the signal)" if from_video else "The signal controller"
             out.append(_draft(
                 ConflictType.semantic,
-                Severity.high if right_of_way else Severity.medium,
+                Severity.medium if from_video or not right_of_way else Severity.high,
                 f"{APPROACH_NAMES.get(approach, approach)} signal state disputed",
-                f"{who} says {subject} was {claimed}. The signal controller shows {state} "
+                f"{who} says {subject} was {claimed}. {record[0].upper() + record[1:]} shows {state} "
                 f"from {_fmt_t(t0)} to {_fmt_t(t1)}.{entered}{agree_txt}",
                 [o.id] + agreeing, (t0, t1),
                 {"method": "rule:signal_phase", "approach": approach, "claimed_state": claimed,
@@ -328,6 +334,96 @@ def vehicle_types(ctx: Context) -> list[dict]:
     return out
 
 
+# Witness action -> record actions that say the opposite (for the same vehicle, around the same time).
+OPPOSITES = {"no_braking": {"braking"}, "accelerating": {"braking", "stopped"}, "stopped": {"moving"},
+             "braking": {"accelerating"}}
+
+
+def opposing_actions(ctx: Context) -> list[dict]:
+    """A witness says a vehicle did X; a sensor, the video or tracking shows the opposite then."""
+    out = []
+    t_c = ctx.collision_t()
+    for o in ctx.observations:
+        opposite = OPPOSITES.get(o.action)
+        if o.source_type != SourceType.witness or not opposite or not o.vehicle_id:
+            continue
+        if o.action == "accelerating" and ctx.speed_samples(o.vehicle_id):
+            continue  # speed_trends already judges this against the measured speed profile
+        window = ctx.window_of(o)
+        if window is None:  # untimed claim: the run-up to the collision
+            if t_c is None:
+                continue
+            window = (t_c - 5.0, t_c)
+        lo, hi = window[0] - 1.0, window[1] + 1.0
+        record = [r for r in ctx.observations if r.source_type != SourceType.witness and r.vehicle_id == o.vehicle_id
+                  and r.action in opposite and (t := ctx.t_of(r)) is not None and lo <= t <= hi]
+        if o.action == "stopped":  # "stopped" is contradicted only by real movement, not by a moving summary at t0
+            record = [r for r in record if (r.attributes.get("speed_kmh") or 0) > 10]
+        if not record:
+            continue
+        r = min(record, key=lambda r: abs((ctx.t_of(r) or 0) - (window[0] + window[1]) / 2))
+        weak = r.basis == "inferred"
+        out.append(_draft(
+            ConflictType.semantic, Severity.low if weak else Severity.medium,
+            f"{source_label(o)} says {o.vehicle_id} {o.action.replace('_', ' ')}; {source_label(r)} shows "
+            f"{r.action.replace('_', ' ')}",
+            f"{source_label(o)}: '{o.raw_text or o.action}'. {source_label(r)} records {r.action.replace('_', ' ')} "
+            f"for {o.vehicle_id} at {_fmt_t(ctx.t_of(r))} ({r.basis}"
+            f"{', an AI reading of the footage' if weak else ''}).",
+            [o.id, r.id], (lo, hi), {"method": "rule:opposing_action", "record_basis": r.basis}))
+    return out
+
+
+def colours(ctx: Context) -> list[dict]:
+    """Sources that describe the same vehicle in different colours."""
+    from app.modules.extraction.witness import _words
+
+    out = []
+    for vid in sorted({o.vehicle_id for o in ctx.observations if o.vehicle_id}):
+        seen: dict[str, list[Observation]] = {}
+        for o in ctx.observations:
+            if o.vehicle_id == vid and o.vehicle_description:
+                cs, _ = _words(o.vehicle_description)
+                if len(cs) == 1:
+                    seen.setdefault(next(iter(cs)), []).append(o)
+        if len(seen) > 1:
+            names = sorted(seen)
+            out.append(_draft(
+                ConflictType.semantic, Severity.medium, f"{vid} described in different colours",
+                f"Sources describe {vid} as " + " vs ".join(
+                    f"{c} ({', '.join(sorted({source_label(o) for o in seen[c]}))})" for c in names) + ".",
+                [o.id for c in names for o in seen[c][:2]], None, {"method": "rule:colour", "colours": names}))
+    return out
+
+
+def coverage_gaps(ctx: Context) -> list[dict]:
+    """Evidence that stops (or starts) before the collision: what it cannot tell us."""
+    t_c = ctx.collision_t()
+    if t_c is None or not ctx.coverage:
+        return []
+    out = []
+    videos = [c for c in ctx.coverage if c[0] == SourceType.video]
+    if videos and not any(c[3][0] - 0.5 <= t_c <= c[3][1] + 0.5 for c in videos):
+        spans = ", ".join(f"{f} ({c[0]:g}–{c[1]:g} s)" for _, f, _, c in videos)
+        ids = [o.id for o in ctx.observations if o.source_type == SourceType.video][:1]
+        if ids:
+            out.append(_draft(ConflictType.missing_evidence, Severity.medium, "No video covers the collision",
+                              f"The collision is placed at {_fmt_t(t_c)}, but the footage covers only {spans}.",
+                              ids, (t_c, t_c), {"method": "rule:coverage", "collision_t_s": t_c}))
+    coll = next((e for e in ctx.timeline.events if e.category == "collision"), None)
+    for vid in (coll.vehicle_ids if coll else []):
+        own = [c for c in ctx.coverage if c[0] == SourceType.sensor and vid in c[2]]
+        if own and not any(c[3][0] - 0.5 <= t_c <= c[3][1] + 0.5 for c in own):
+            f, (a, b) = own[0][1], own[0][3]
+            ids = [o.id for o in ctx.observations if o.vehicle_id == vid and o.source_ref.file == f][:1]
+            if ids:
+                out.append(_draft(ConflictType.missing_evidence, Severity.medium,
+                                  f"{vid} telemetry does not cover the collision",
+                                  f"{f} covers {a:g}–{b:g} s; the collision is placed at {_fmt_t(t_c)}.",
+                                  ids, (t_c, t_c), {"method": "rule:coverage"}))
+    return out
+
+
 # ---------------------------------------------------------- missing evidence
 
 def sensor_gaps(ctx: Context) -> list[dict]:
@@ -414,4 +510,5 @@ def single_source_events(ctx: Context) -> list[dict]:
     return out
 
 
-ALL_RULES = [speed_claims, signal_states, speed_trends, clock_times, sensor_gaps, single_source_events, vehicle_types]
+ALL_RULES = [speed_claims, signal_states, speed_trends, opposing_actions, clock_times, sensor_gaps, coverage_gaps,
+             single_source_events, vehicle_types, colours]

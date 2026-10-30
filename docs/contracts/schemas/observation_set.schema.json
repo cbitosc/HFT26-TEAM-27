@@ -210,6 +210,29 @@
       },
       "title": "Warnings",
       "type": "array"
+    },
+    "coverage_s": {
+      "anyOf": [
+        {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Time span (t_rel_s) the evidence covers; lets gaps in coverage be detected",
+      "title": "Coverage S"
     }
   },
   "required": [
