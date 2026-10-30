@@ -171,11 +171,11 @@ def signal_states(ctx: Context) -> list[dict]:
         approach = ctx.normalise_approach(o.attributes.get("approach"))
         if o.action != "signal_state" or o.source_type == SourceType.sensor or not approach:
             continue
-        if o.source_type == SourceType.witness and o.vehicle_id and ctx.window_of(o) is None:
+        entry = ctx.entry_t(o.vehicle_id) if o.source_type == SourceType.witness and o.vehicle_id else None
+        if entry is not None:
             # "its light was green when it was approaching": the decisive moment is the entry.
-            entry = ctx.entry_t(o.vehicle_id)
-            if entry is None:
-                continue
+            # Checked even when the timeline placed the claim elsewhere: module 3 groups signal
+            # claims by their stated colour, which would make every claim agree with itself.
             probe = entry[0] - 0.05
         else:
             window = ctx.window_of(o)
@@ -243,15 +243,17 @@ def speed_trends(ctx: Context) -> list[dict]:
         samples = ctx.speed_samples(o.vehicle_id)
         if len(samples) < 2:
             continue
-        window = ctx.window_of(o)
-        if window is None:
-            # Unplaced: the run-up to the junction, from the onset of the phase the vehicle entered on.
-            entry = ctx.entry_t(o.vehicle_id)
-            if entry is None:
-                continue
+        entry = ctx.entry_t(o.vehicle_id) if o.source_type == SourceType.witness else None
+        if entry is not None:
+            # A witness's "sped up to beat the light" is about the run-up to the junction, from the
+            # onset of the phase the vehicle entered on, wherever the timeline placed the claim.
             approach = ctx.approach_of(o.vehicle_id)
             phase = _signal_phase(ctx, approach, entry[0] - 0.05) if approach else None
             window = (phase[2] if phase else entry[0] - 3.0, entry[0])
+        else:
+            window = ctx.window_of(o)
+            if window is None:
+                continue
         # Keep the last sample before the window as the baseline speed.
         before = [s for s in samples if ctx.t_of(s) < window[0]]
         used = before[-1:] + [s for s in samples if window[0] <= ctx.t_of(s) <= window[1]]
@@ -367,12 +369,19 @@ def sensor_gaps(ctx: Context) -> list[dict]:
 
 
 def single_source_events(ctx: Context) -> list[dict]:
-    """Pre-collision timeline events backed by one source type only."""
+    """Decisive timeline events backed by one source type only.
+
+    Only the collision itself and signal phases a vehicle entered the junction on
+    decide fault, so only those are flagged. Flagging every single-source event
+    buried the report (15 of 17 conflicts with sensor-only evidence).
+    """
     out = []
     t_c = ctx.collision_t()
     for e in ctx.timeline.events:
-        if len(set(e.source_types)) != 1 or (t_c is not None and e.t_start_s >= t_c and e.category != "collision"):
+        if len(set(e.source_types)) != 1 or e.category not in ("collision", "signal"):
             continue
+        if e.category == "signal" and t_c is not None and e.t_start_s >= t_c:
+            continue  # phases that start at or after the impact can't have been entered on
         only = e.source_types[0]
         ids = list(e.observation_ids)
         extra = ""
@@ -380,14 +389,17 @@ def single_source_events(ctx: Context) -> list[dict]:
         if e.category == "signal":
             approach = next((ctx.by_id[i].attributes.get("approach") for i in ids if i in ctx.by_id), None)
             vids = ctx.vehicles_on(approach) if approach else []
+            # Probe just before the entry, as signal_states does: a phase starting at the entry instant
+            # was not the one the vehicle entered on.
             entries = [x for x in ctx.timed(lambda o: o.vehicle_id in vids and o.action == "entering_intersection")
-                       if e.t_start_s <= ctx.t_of(x) <= e.t_end_s]
+                       if e.t_start_s <= ctx.t_of(x) - 0.05 <= e.t_end_s]
+            if not entries:
+                continue
             ids += [x.id for x in entries]
-            if entries:
-                extra = (f" {', '.join(sorted({x.vehicle_id for x in entries}))}'s entry on this signal "
-                         f"rests on the {only.value} record alone; no camera or witness saw the signal head.")
-                # The window that matters is from the entry to the collision.
-                t_range = (ctx.t_of(entries[0]), t_c if t_c is not None else e.t_end_s)
+            extra = (f" {', '.join(sorted({x.vehicle_id for x in entries}))}'s entry on this signal "
+                     f"rests on the {only.value} record alone; no camera or witness saw the signal head.")
+            # The window that matters is from the entry to the collision.
+            t_range = (ctx.t_of(entries[0]), t_c if t_c is not None else e.t_end_s)
         label = {"sensor": "the sensor/controller log", "video": "the dashcam", "witness": "witness accounts"}[only.value]
         out.append(_draft(
             ConflictType.missing_evidence,

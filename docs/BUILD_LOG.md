@@ -245,3 +245,19 @@ Branch `claude/mod3-timeline-7dcf2c`. `build_timeline` is now real (Pandas/NumPy
 1. **The W1 "green light" conflict is lost end to end.** Module 3 groups `wit_w1_02` (W1: V1's light was green on approach) into the t=0 "Northbound signal green" event, where it agrees with the signal. Module 4 finds conflicts through timeline grouping, so it never compares the claim with the 7.0–10.0 s yellow phase. On `fixtures/timeline.json` module 4 finds it; on module 3's timeline it doesn't (8 → 12 conflicts, but this high-severity one is missing)
 2. **Noisy single-source conflicts.** Module 4 flags every event backed by one source type as `missing_evidence` (e.g. "'V1 sensor data gap' has a single source", "'Eastbound signal red' has a single source"). With sensor-only uploads that's 15 of 17 conflicts
 3. With sensor-only evidence no collision is inferred: there is no `collision` observation, although both vehicles show simultaneous sudden heading changes at the same point at t=10.5. Arguably correct ("only if supported by evidence"), but it could be inferred
+
+## 2026-10-30 · Fix: module 4 on module 3's real timeline
+
+Fixes integration issues 1 and 2 found after the merge. Only module 4 changed; module 3's grouping is left as is.
+
+| File | Change | Why |
+| --- | --- | --- |
+| `src/backend/app/modules/contradictions/rules.py` · `signal_states` | A witness signal claim about a vehicle ("its light was green when it was approaching") is always checked against the controller phase just before that vehicle's sensor/video-anchored junction entry. Before, this only happened when the timeline hadn't placed the claim | Module 3 groups signal claims by their stated colour, so W1's "green" landed in the t=0 green event and agreed with itself. The high-severity W1 green-light conflict was lost |
+| same · `speed_trends` | Same principle for "sped up to beat the light": witness claims use the run-up window (onset of the entry phase → entry) regardless of timeline placement | On module 3's timeline the window stretched to t=11.5 s, past the collision |
+| same · `single_source_events` | Only flags the collision event and signal phases a vehicle entered on (probed 0.05 s before entry, as in `signal_states`). Other single-source events (sensor gaps, witness-only claims, motion, post-collision phases) are no longer conflicts | Every single-source event was flagged: 15 of 17 conflicts with sensor-only evidence |
+| `tests/test_contradictions.py` | The `report` fixture is parametrized over the hand-written `fixtures/timeline.json` **and** module 3's `build_timeline` output, so every module-4 check also runs on the real pipeline input. New `test_single_source_flags_only_decisive_events`. The LLM-fallback test now compares with the rules-only result (7) instead of a hard-coded 8 | Module 4's tests only ever saw the fixture timeline, which hid issue 1 |
+| `tests/test_api.py` | The sensor-only integration test asserts exactly two single-source conflicts: EB red (V2's entry) and NB yellow (V1's entry) | Guards issue 2 end to end |
+
+Result: the demo run now gives exactly the 7 conflicts of `fixtures/conflicts.json` (by type and subject). Sensor-only uploads give 4 instead of 17. `pytest` **84 passed**. Dashboard rechecked: Contradiction Explorer (7), with the NB signal dispute back.
+
+Still open: issue 3 (no collision inferred from sensor-only evidence) was left as is, by choice.

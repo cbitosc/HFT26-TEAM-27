@@ -6,6 +6,7 @@ import pytest
 
 from app import config, store
 from app.modules.contradictions import detect_conflicts
+from app.modules.timeline import build_timeline
 from app.schemas import ConflictReport, ConflictType, ObservationSet, Severity, Timeline
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -20,13 +21,18 @@ def no_llm(monkeypatch):
     monkeypatch.setattr(config, "FEATHERLESS_API_KEY", "")
 
 
-def _inputs():
-    return [store.load_fixture(n, ObservationSet) for n in OBS], store.load_fixture("timeline.json", Timeline)
+def _inputs(timeline_source: str = "fixture"):
+    sets = [store.load_fixture(n, ObservationSet) for n in OBS]
+    if timeline_source == "module3":
+        return sets, build_timeline(sets)
+    return sets, store.load_fixture("timeline.json", Timeline)
 
 
-@pytest.fixture
-def report() -> ConflictReport:
-    return detect_conflicts(*_inputs())
+# Run every check on the hand-written timeline AND on module 3's real one: the two
+# group observations differently, and the pipeline feeds module 4 the real one.
+@pytest.fixture(params=["fixture", "module3"])
+def report(request) -> ConflictReport:
+    return detect_conflicts(*_inputs(request.param))
 
 
 def _find(report, type_, *obs_ids):
@@ -134,7 +140,9 @@ def test_llm_failure_falls_back_to_rules(monkeypatch):
 
     monkeypatch.setattr(config, "FEATHERLESS_API_KEY", "test-key")
     monkeypatch.setattr(httpx, "post", boom)
-    assert len(detect_conflicts(*_inputs()).conflicts) == 8
+    rules_only = detect_conflicts(*_inputs())
+    monkeypatch.setattr(config, "FEATHERLESS_API_KEY", "")
+    assert len(rules_only.conflicts) == len(detect_conflicts(*_inputs()).conflicts) == 7
 
 
 def test_dashcam_ego_lane_signal_maps_to_ego_approach():
@@ -144,3 +152,10 @@ def test_dashcam_ego_lane_signal_maps_to_ego_approach():
         o.attributes["approach"] = "ego lane"
     c = _find(detect_conflicts(sets, timeline), ConflictType.semantic, "wit_w1_02", "sig_001")
     assert "vid_002" in c.details["agreeing"]
+
+
+def test_single_source_flags_only_decisive_events(report):
+    single = [c for c in report.conflicts if c.title.endswith("has a single source")]
+    assert len(single) <= 2, [c.title for c in single]
+    assert all(c.details.get("event_id") for c in single)
+    assert not any("sensor data gap" in c.title or "witness claim" in c.title for c in single)

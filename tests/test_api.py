@@ -73,6 +73,9 @@ def test_real_sensor_evidence_flows_through_modules_2_to_5():
     assert entering == {"V1", "V2"}
     conflicts = client.get("/api/conflicts").json()["conflicts"]
     assert any(c["type"] == "missing_evidence" and set(c["t_range_s"] or []) == {6.0, 7.5} for c in conflicts)
+    single = sorted(c["title"] for c in conflicts if c["title"].endswith("has a single source"))
+    # Only the phases each vehicle entered on are decisive (V2 on red, V1 on yellow).
+    assert single == ["'Eastbound signal red' has a single source", "'Northbound signal yellow' has a single source"]
 
     # Sensors alone carry no "collision" observation, so no marker is expected; tracks must still meet.
     recon = client.get("/api/reconstruction").json()
