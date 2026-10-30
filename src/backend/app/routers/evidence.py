@@ -5,7 +5,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, UploadFile
+import cv2
+from fastapi import APIRouter, HTTPException, Response, UploadFile
 
 from app import config, store
 from app.schemas import Evidence, SourceType
@@ -55,3 +56,28 @@ async def upload_evidence(file: UploadFile) -> Evidence:
 def delete_evidence(evidence_id: str) -> None:
     if not store.delete_evidence(evidence_id):
         raise HTTPException(404, "Evidence not found")
+
+
+@router.get("/{evidence_id}/frames/{index}", response_class=Response,
+            responses={200: {"content": {"image/jpeg": {}}}})
+def video_frame(evidence_id: str, index: int, width: int = 480) -> Response:
+    """One frame of an uploaded video as a JPEG (thumbnails for `frame:<n>` source refs)."""
+    ev = next((e for e in store.list_evidence() if e.id == evidence_id), None)
+    if ev is None or ev.kind != SourceType.video:
+        raise HTTPException(404, "Video evidence not found")
+    cap = cv2.VideoCapture(ev.stored_path)
+    try:
+        if index < 0 or index >= int(cap.get(cv2.CAP_PROP_FRAME_COUNT)):
+            raise HTTPException(404, "Frame out of range")
+        cap.set(cv2.CAP_PROP_POS_FRAMES, index)
+        ok, image = cap.read()
+    finally:
+        cap.release()
+    if not ok:
+        raise HTTPException(500, "Could not decode frame")
+    width = max(64, min(width, 1280))
+    h, w = image.shape[:2]
+    if w > width:
+        image = cv2.resize(image, (width, round(h * width / w)), interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    return Response(buf.tobytes(), media_type="image/jpeg", headers={"Cache-Control": "max-age=3600"})

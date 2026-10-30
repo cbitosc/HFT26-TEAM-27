@@ -12,10 +12,14 @@ on the mode:
 """
 from __future__ import annotations
 
+import functools
+import inspect
 import logging
+import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Callable, Protocol
 
 from app import config, store
 from app.modules.contradictions import detect_conflicts
@@ -48,6 +52,29 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class Tracker(Protocol):
+    """Receives live progress; app/jobs.py implements it for the dashboard."""
+    def plan(self, stages: list[str]) -> None: ...
+    def start(self, stage: str) -> None: ...
+    def update(self, stage: str, done: int, total: int, note: str) -> None: ...
+    def finish(self, result: StageResult) -> None: ...
+
+
+class _NoTracker:
+    def plan(self, stages): pass
+    def start(self, stage): pass
+    def update(self, stage, done, total, note): pass
+    def finish(self, result): pass
+
+
+# One run at a time: concurrent runs would race on storage/runs/latest and share the API budget.
+RUN_LOCK = threading.Lock()
+
+
+class RunInProgress(RuntimeError):
+    pass
+
+
 def _empty(model):
     """Placeholder result for a stage that produced nothing in live mode."""
     common = {"incident_id": config.INCIDENT_ID, "generated_at": _now()}
@@ -61,49 +88,83 @@ def _empty(model):
     return None
 
 
-def _run_stage(stage: str, fn: Callable, args: tuple, fixture: str, model, results: list[StageResult], demo: bool):
-    """Returns the module's output, else the fixture (demo mode) or an empty result / None (live mode)."""
+def _run_stage(stage: str, fn: Callable, args: tuple, fixture: str, model, demo: bool,
+               tracker: Tracker) -> tuple[object, StageResult]:
+    """(output, result): the module's output, else the fixture (demo mode) or an empty result / None (live)."""
     fallback = "served demo fixture" if demo else "no output"
+    tracker.start(stage)
+    if "progress" in inspect.signature(fn).parameters:  # modules that can report their own progress
+        fn = functools.partial(fn, progress=lambda done, total, note: tracker.update(stage, done, total, note))
     try:
         out = fn(*args)
-        results.append(StageResult(stage=stage, status="real"))
-        return out
+        result = StageResult(stage=stage, status="real")
     except NotImplementedError as e:
-        results.append(StageResult(stage=stage, status="fixture" if demo else "skipped", message=f"{e}; {fallback}"))
+        out = None
+        result = StageResult(stage=stage, status="fixture" if demo else "skipped", message=f"{e}; {fallback}")
     except Exception as e:  # a real module failed: keep the pipeline alive
         log.exception("stage %s failed", stage)
-        results.append(StageResult(stage=stage, status="error", message=f"{type(e).__name__}: {e}; {fallback}"))
-    return store.load_fixture(fixture, model) if demo else _empty(model)
+        out = None
+        result = StageResult(stage=stage, status="error", message=f"{type(e).__name__}: {e}; {fallback}")
+    if out is None:
+        out = store.load_fixture(fixture, model) if demo else _empty(model)
+    tracker.finish(result)
+    return out, result
 
 
-def _extract_all(evidence: list[Evidence], results: list[StageResult]) -> list[ObservationSet]:
+def _extract_all(evidence: list[Evidence], results: list[StageResult], tracker: Tracker) -> list[ObservationSet]:
     if not evidence:  # demo mode: one pass per source type using bundled fixtures
         for stage, _fn, fixture in EXTRACTORS.values():
-            results.append(StageResult(stage=stage, status="fixture", message="no evidence uploaded; demo fixture"))
+            result = StageResult(stage=stage, status="fixture", message="no evidence uploaded; demo fixture")
+            results.append(result)
+            tracker.finish(result)
         return [store.load_fixture(fixture, ObservationSet) for _s, _f, fixture in EXTRACTORS.values()]
 
-    sets: list[ObservationSet] = []
-    for ev in evidence:
+    # Extractors are independent (and mostly waiting on model APIs), so run them side by side.
+    def one(ev: Evidence):
         stage, fn, fixture = EXTRACTORS[ev.kind]
-        out = _run_stage(f"{stage} [{ev.filename}]", fn, (ev,), fixture, ObservationSet, results, demo=False)
+        return _run_stage(_stage_name(ev), fn, (ev,), fixture, ObservationSet, False, tracker)
+
+    with ThreadPoolExecutor(max_workers=min(8, len(evidence))) as pool:
+        outcomes = list(pool.map(one, evidence))  # keeps upload order
+    sets: list[ObservationSet] = []
+    for out, result in outcomes:
+        results.append(result)
         if out is not None:
             sets.append(out)
     return sets
 
 
-def run_analysis() -> AnalysisRun:
+def _stage_name(ev: Evidence) -> str:
+    return f"{EXTRACTORS[ev.kind][0]} [{ev.filename}]"
+
+
+def run_analysis(tracker: Tracker | None = None) -> AnalysisRun:
+    """Run the whole pipeline. Raises RunInProgress if another run holds the lock."""
+    if not RUN_LOCK.acquire(blocking=False):
+        raise RunInProgress("an analysis is already running")
+    try:
+        return _run(tracker or _NoTracker())
+    finally:
+        RUN_LOCK.release()
+
+
+def _run(tracker: Tracker) -> AnalysisRun:
     started = _now()
     results: list[StageResult] = []
     evidence = store.list_evidence()
     demo = not evidence
+    later = ["3. timeline", "4. contradictions", "5. reconstruction"]
+    tracker.plan(([_stage_name(e) for e in evidence] if evidence else [s for s, _f, _x in EXTRACTORS.values()]) + later)
 
-    observation_sets = _extract_all(evidence, results)
-    timeline = _run_stage("3. timeline", build_timeline, (observation_sets,), "timeline.json", Timeline,
-                          results, demo)
-    conflicts = _run_stage("4. contradictions", detect_conflicts, (observation_sets, timeline),
-                           "conflicts.json", ConflictReport, results, demo)
-    recon = _run_stage("5. reconstruction", build_reconstruction, (observation_sets, timeline, conflicts),
-                       "reconstruction.json", Reconstruction, results, demo)
+    observation_sets = _extract_all(evidence, results, tracker)
+    timeline, r = _run_stage(later[0], build_timeline, (observation_sets,), "timeline.json", Timeline, demo, tracker)
+    results.append(r)
+    conflicts, r = _run_stage(later[1], detect_conflicts, (observation_sets, timeline), "conflicts.json",
+                              ConflictReport, demo, tracker)
+    results.append(r)
+    recon, r = _run_stage(later[2], build_reconstruction, (observation_sets, timeline, conflicts),
+                          "reconstruction.json", Reconstruction, demo, tracker)
+    results.append(r)
 
     run = AnalysisRun(run_id=uuid.uuid4().hex[:8], started_at=started, finished_at=_now(),
                       evidence_count=len(evidence), stages=results)

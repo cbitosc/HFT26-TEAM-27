@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import Panel, { SourceBadge } from './Panel'
+import ObservationList from './ObservationList'
+import Panel from './Panel'
 
 const SEVERITY_STYLES = {
   high: 'border-l-red-500',
@@ -27,6 +28,7 @@ export default function ContradictionExplorer({ report, observationsById, onFocu
           {TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
         </select>
       }>
+      {conflicts.length === 0 && <p className="text-xs text-slate-400">No contradictions between the sources.</p>}
       <ul className="space-y-2">
         {conflicts.map((c) => (
           <li key={c.id} className={`rounded border border-l-4 border-slate-200 ${SEVERITY_STYLES[c.severity]}`}>
@@ -38,22 +40,9 @@ export default function ContradictionExplorer({ report, observationsById, onFocu
               <p className="mt-1 text-xs text-slate-600">{c.description}</p>
             </button>
             {open === c.id && (
-              <ul className="space-y-1 border-t border-slate-100 p-2">
-                {c.observation_ids.map((id) => {
-                  const o = observationsById[id]
-                  return (
-                    <li key={id} className="text-xs">
-                      <div className="flex items-center gap-1.5">
-                        {o && <SourceBadge type={o.source_type} />}
-                        <code className="text-slate-500">{id}</code>
-                        {o && <span className="text-slate-400">{o.source_ref.file} @ {o.source_ref.locator}</span>}
-                      </div>
-                      {o?.raw_text && <p className="mt-0.5 pl-2 italic text-slate-600">“{o.raw_text}”</p>}
-                      {!o && <p className="pl-2 text-slate-400">observation not in current results</p>}
-                    </li>
-                  )
-                })}
-              </ul>
+              <div className="border-t border-slate-100 p-2">
+                <ObservationList ids={c.observation_ids} observationsById={observationsById} />
+              </div>
             )}
           </li>
         ))}

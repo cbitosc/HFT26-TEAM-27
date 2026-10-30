@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-SCHEMA_VERSION = "1.0.1"
+SCHEMA_VERSION = "1.0.2"
 
 
 # ---------------------------------------------------------------- evidence
@@ -187,3 +187,23 @@ class AnalysisRun(BaseModel):
     finished_at: datetime
     evidence_count: int
     stages: list[StageResult]
+
+
+class StageProgress(BaseModel):
+    """Live state of one stage while a run is in progress."""
+    stage: str
+    status: Literal["pending", "running", "real", "fixture", "skipped", "error"] = "pending"
+    done: int = 0
+    total: int = 0
+    note: str = ""
+
+
+class AnalysisJob(BaseModel):
+    """A background analysis run, polled by the dashboard (GET /api/analysis/jobs/current)."""
+    job_id: str
+    state: Literal["running", "done", "failed"]
+    started_at: datetime
+    finished_at: datetime | None = None
+    stages: list[StageProgress]
+    run: AnalysisRun | None = None
+    error: str | None = None

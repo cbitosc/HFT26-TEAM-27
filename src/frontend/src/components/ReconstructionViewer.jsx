@@ -133,6 +133,19 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
   }, [data, observations])
 
   if (!data) return <Panel title="Reconstruction Viewer">Loading…</Panel>
+  if (data.vehicles.length === 0) {
+    return (
+      <Panel title="Reconstruction Viewer">
+        <div className="flex h-full min-h-48 flex-col items-center justify-center gap-1 text-center">
+          <p className="text-sm text-slate-600">No vehicle trajectories in this evidence.</p>
+          <p className="max-w-sm text-xs text-slate-400">
+            Trajectories come from sensor tracks with positions (x/y). Video and witness findings appear in the
+            timeline and contradictions instead.
+          </p>
+        </div>
+      </Panel>
+    )
+  }
 
   const { extent_m: sceneE, lane_width_m: L, roads } = data.scene
   const R = 1.5 * sceneE // roads run past the scene edge so the auto view never shows them ending

@@ -5,11 +5,12 @@ always has something to render.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app import store
-from app.pipeline import run_analysis
-from app.schemas import AnalysisRun, ConflictReport, ObservationSet, Reconstruction, Timeline
+from app.jobs import jobs
+from app.pipeline import RunInProgress, run_analysis
+from app.schemas import AnalysisJob, AnalysisRun, ConflictReport, ObservationSet, Reconstruction, Timeline
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -18,7 +19,22 @@ _OBSERVATION_FIXTURES = ["video_observations.json", "witness_observations.json",
 
 @router.post("/analysis/run", response_model=AnalysisRun)
 def run() -> AnalysisRun:
-    return run_analysis()
+    """Synchronous run (scripts, tests). The dashboard uses the background job endpoints."""
+    try:
+        return run_analysis()
+    except RunInProgress as e:
+        raise HTTPException(409, str(e))
+
+
+@router.post("/analysis/jobs", response_model=AnalysisJob, status_code=202)
+def start_job() -> AnalysisJob:
+    """Start a background run, or return the one already running."""
+    return jobs.start()
+
+
+@router.get("/analysis/jobs/current", response_model=AnalysisJob | None)
+def current_job():
+    return jobs.current()
 
 
 @router.get("/analysis/latest", response_model=AnalysisRun | None)

@@ -53,16 +53,17 @@ export default function App() {
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-7xl gap-4 px-4 py-4 lg:grid-cols-3">
+      <main className="mx-auto grid max-w-7xl gap-4 px-4 py-4 *:min-w-0 lg:grid-cols-3">
         {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 lg:col-span-3">{error}</div>}
         <div className="lg:col-span-1">
-          <EvidenceManager run={run} onAnalysisDone={loadResults} />
+          <EvidenceManager run={run} observations={results?.observations} onAnalysisDone={loadResults} />
         </div>
         <div className="lg:col-span-2">
           <ReconstructionViewer data={results?.reconstruction} time={time} onTimeChange={setTime} />
         </div>
         <div className="lg:col-span-2">
-          <IncidentTimeline timeline={results?.timeline} time={time} selectedObs={selectedObs} onFocus={focus} />
+          <IncidentTimeline timeline={results?.timeline} time={time} selectedObs={selectedObs} onFocus={focus}
+            observationsById={observationsById} />
         </div>
         <div className="lg:col-span-1">
           <ContradictionExplorer report={results?.conflicts} observationsById={observationsById} onFocus={focus} />

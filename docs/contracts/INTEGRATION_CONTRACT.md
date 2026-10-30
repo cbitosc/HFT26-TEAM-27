@@ -1,6 +1,6 @@
 # Integration contract
 
-**Source of truth:** [`src/backend/app/schemas.py`](../../src/backend/app/schemas.py) (schema version `1.0.0`).
+**Source of truth:** [`src/backend/app/schemas.py`](../../src/backend/app/schemas.py) (schema version `1.0.2`).
 JSON Schema copies live in [`schemas/`](schemas/). Regenerate them with `python scripts/export_schemas.py`.
 Example payloads for every shape are in [`/fixtures`](../../fixtures).
 
@@ -48,7 +48,10 @@ upload ──► Evidence ──► [1] analyze_video    ─┐
 | GET | `/api/health` | status, schema version |
 | GET / POST | `/api/evidence` | list / upload (`multipart file`). Type is picked by extension: `.mp4 .mov .avi .mkv` → video, `.txt` → witness, `.csv` → sensor |
 | DELETE | `/api/evidence/{id}` | 204 |
-| POST | `/api/analysis/run` | `AnalysisRun` with per-stage status `real \| fixture \| error` |
+| POST | `/api/analysis/run` | Synchronous run → `AnalysisRun`, per-stage status `real \| fixture \| skipped \| error`. 409 while another run is in progress |
+| POST | `/api/analysis/jobs` | Starts a background run (or returns the running one) → `AnalysisJob` (202) |
+| GET | `/api/analysis/jobs/current` | Latest `AnalysisJob` with live per-stage progress (`pending \| running` + `done/total`), or `null` |
+| GET | `/api/evidence/{id}/frames/{index}?width=480` | One frame of an uploaded video as JPEG (thumbnails for `frame:<n>` refs) |
 | GET | `/api/analysis/latest` | last `AnalysisRun` or `null` |
 | GET | `/api/observations` | `ObservationSet[]` |
 | GET | `/api/timeline` | `Timeline` |

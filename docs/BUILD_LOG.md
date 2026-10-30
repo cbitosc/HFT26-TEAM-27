@@ -296,3 +296,45 @@ Checked: modules 3–5 accept empty input (0 events, 0 conflicts, 0 vehicles). `
 - Created `.env` in the repo root (**git-ignored, not committed**) with an empty `FEATHERLESS_API_KEY=` placeholder and commented optional model overrides. The key stays empty until the user adds it; with an empty key, the video and witness stages are `skipped`
 - `.claude/launch.json`: the backend starts uvicorn with `--env-file ../../.env` when the file exists (python-dotenv is already installed via `uvicorn[standard]`)
 - `CLAUDE.md`: the backend command now includes `--env-file ../../.env`
+
+## 2026-10-30 · Video analysis: faster, fixed-camera mode, verified findings; live progress in the dashboard
+
+Example dataset (60 s, 4-view motorway CCTV): **11 min → 35 s** for a fresh run, **1 s** for a re-run (cache), **63 noisy findings → 1 verified one** (a white van stopped in view 4, confirmed by eye).
+
+### Featherless / model
+- Default vision model `google/gemma-3-27b-it` → `Qwen/Qwen3-VL-30B-A3B-Instruct`. Gemma is gated on Featherless (403 until HuggingFace is linked); Qwen3-VL is ungated, on the plan, costs 2 concurrency units
+- The key lives in the git-ignored `.env`; optional `VIDEO_*` settings are listed there as comments
+
+### Speed (`src/backend/app/modules/ingestion/`)
+| Change | Effect |
+| --- | --- |
+| `video.select_keyframes`: cheap OpenCV scan at 4 fps; half the budget evenly spaced, half on the biggest jumps in frame-to-frame change (credited to the peak frame, event picks ≥1 s apart) | 24 model calls instead of 90 |
+| `VIDEO_WORKERS` 4 → 24 | one round of parallel calls (the pay-per-request plan allows 100 units) |
+| Prompt asks for brief answers (≤5 vehicles, ≤3 hazards, short descriptions); `max_tokens` 700 → 450; `parse_frame_analysis` repairs replies cut off mid-JSON | Output tokens (~15/s) were most of the latency, and truncated JSON failed 15/24 frames and triggered retries |
+| Per-frame answer cache in `storage/cache/vision/<file sha>/<model>_<mode>_<prompt hash>[_pairN]/` | re-runs of the same video cost nothing |
+| `VisionClient` retries with backoff (1.5/3/6 s) but not on 401/403/404 | transient errors recover; a gated model fails fast |
+
+The 11-minute baseline was also inflated: stopping the backend lets in-flight requests finish, so an old 90-frame run kept going in a stale process and competed with new runs.
+
+### Fixed-camera mode
+- `VIDEO_CAMERA_MODE=auto|dashcam|fixed`. Auto decides on a burst of 16 consecutive frames (`camera_motion_share`: share of pixels changing; ≤12% → fixed). Not on keyframes: those are seconds apart, so traffic alone made every camera look like a dashcam
+- `FIXED_PROMPT`: no ego vehicle, numbered views, only notable vehicles, hazards, collisions, and signals only with `signal_heads_visible: true` (the model invented "northbound green" on a motorway)
+- Each keyframe is sent with a second image 1 s later (`with_followers`) so motion is visible
+- `aggregate_fixed`: **stopped vehicles must be verified by pixels.** The model gives a box; `video.static_regions` checks that the patch is unchanged 2 s and 4 s later (max diff ≤ 6, edge density ≥ 0.05; calibrated on this video: parked van 3–5, passing traffic 8–13, a misread "stopped" car 22–29). The view comes from the box's position in the camera grid (`view_of_box`), because the model's view numbers slip. Sightings of the same spot merge into one vehicle with `seen_in_keyframes` / `first_seen_s` / `last_seen_s`. Momentary claims (braking, lane changes, swerves) are dropped as unjudgeable from snapshots; `stopped_in_lane` hazards fold into the verified vehicle; collisions are always kept. Every drop is counted in the run's warnings
+- Label persistence (same label + view in ≥3 keyframes) was tried first and rejected: "white van" is too common, and a spot-check showed different vans in different places
+
+### Pipeline, API, schema (1.0.1 → 1.0.2, additive)
+- `pipeline.py`: `Tracker` protocol for live progress; modules taking a `progress` argument report it; extractors run in parallel; `RUN_LOCK` allows one run at a time (`RunInProgress`)
+- `app/jobs.py` (new): background `JobManager`. `POST /api/analysis/jobs` (202) starts or returns the running job; `GET /api/analysis/jobs/current` returns live per-stage `pending/running/…` with `done/total`. `POST /api/analysis/run` stays synchronous and returns 409 while a run is active
+- `GET /api/evidence/{id}/frames/{index}?width=` returns a JPEG frame for `frame:<n>` refs
+- `schemas.py`: `StageProgress`, `AnalysisJob`. JSON schemas re-exported (+ `analysis_job.schema.json`); API table in `INTEGRATION_CONTRACT.md` updated
+- Timeline (`modules/timeline`): events without a V1/V2 id are named by label and camera view ("white van (camera view 4) stopped", "Hazard: …", "Motion spike (view 3)") instead of "Unidentified vehicle"
+
+### Dashboard
+- Evidence Manager: runs as a background job, with a live progress bar, % and elapsed time, per-stage `n/total` and notes; picks up a run already in progress after reload; upload and remove are disabled while running; shows "Last run took …"; collapsible **Analysis notes** list the extractor warnings (camera mode, dropped claims, …)
+- `ObservationList.jsx` (new): evidence rows with a **video frame thumbnail** (click for full size), source, time, confidence, quote and attributes. Used by the timeline (click an event → "Evidence for …") and the Contradiction Explorer
+- Empty states: timeline, contradictions, and the reconstruction viewer when there are no trajectories
+- No sideways scroll at phone width (grid children `min-w-0`, stacked timeline rows on small screens); checked at 375 px
+
+### Tests
+`pytest` **100 passed** (+16): jobs and the run lock, keyframe selection, the vision cache and progress, the frame endpoint, camera-mode detection, fixed-mode filtering, signal gating, paired-image requests, truncated-JSON repair, the pixel static check, view from box. Frontend `npm run build` OK.

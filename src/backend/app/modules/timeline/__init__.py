@@ -442,10 +442,19 @@ class _Builder:
 
     def _label(self, c: _Cluster, descs: dict[str, str], t: float) -> str:
         vs = sorted(c.vehicles)
-        who = " and ".join(vs) or "Unidentified vehicle"
         v = vs[0] if len(vs) == 1 else None
         members = c.members
         attrs = [o.attributes for o in members]
+        # Fixed cameras / video-derived series have no V1/V2 id: name what was seen and where.
+        first = attrs[0] if attrs else {}
+        view = first.get("view")
+        where = "" if view is None else (f" (camera view {view})" if isinstance(view, int) else f" ({str(view).replace('_', ' ')})")
+        who = " and ".join(vs) or (f"{first['label']}{where}" if first.get("label") else "Unidentified vehicle")
+        if not vs and members[0].action == "hazard":
+            what = str(first.get("hazard", "hazard")).replace("_", " ")
+            return f"Hazard: {what}{where}"
+        if not vs and members[0].action == "motion_spike":
+            return f"Motion spike{where}"
 
         if c.family == "signal":
             _, approach, state = c.key

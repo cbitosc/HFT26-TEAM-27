@@ -1,25 +1,59 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import Panel, { SourceBadge } from './Panel'
 
 const STATUS_STYLES = {
+  pending: 'bg-slate-50 text-slate-400',
+  running: 'bg-sky-100 text-sky-800',
   real: 'bg-emerald-100 text-emerald-800',
   fixture: 'bg-slate-100 text-slate-600',
   skipped: 'bg-amber-100 text-amber-800',
   error: 'bg-red-100 text-red-700',
 }
+const FINISHED = new Set(['real', 'fixture', 'skipped', 'error'])
 
-export default function EvidenceManager({ run, onAnalysisDone }) {
+function elapsed(from, to) {
+  const s = Math.max(0, Math.round(((to ? new Date(to) : new Date()) - new Date(from)) / 1000))
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`
+}
+
+export default function EvidenceManager({ run, observations, onAnalysisDone }) {
   const [evidence, setEvidence] = useState([])
-  const [busy, setBusy] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [job, setJob] = useState(null)
   const [message, setMessage] = useState(null)
+  const [, tick] = useState(0)
   const inputRef = useRef(null)
+  const running = job?.state === 'running'
 
   const refresh = () => api.listEvidence().then(setEvidence).catch(() => {})
   useEffect(() => { refresh() }, [])
 
+  // Poll the background job while it runs; pick up a run already in progress on page load.
+  const poll = useCallback(async () => {
+    try {
+      const j = await api.currentJob()
+      setJob(j)
+      if (j?.state === 'running') return
+      if (j?.state === 'failed') setMessage(j.error)
+      if (j) await onAnalysisDone()
+    } catch (e) {
+      setMessage(e.message)
+    }
+  }, [onAnalysisDone])
+
+  useEffect(() => {
+    api.currentJob().then((j) => { if (j?.state === 'running') setJob(j) }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!running) return
+    const id = setInterval(() => { poll(); tick((n) => n + 1) }, 1000)
+    return () => clearInterval(id)
+  }, [running, poll])
+
   const upload = async (files) => {
-    setBusy(true)
+    setUploading(true)
     setMessage(null)
     try {
       for (const f of files) await api.uploadEvidence(f)
@@ -28,7 +62,7 @@ export default function EvidenceManager({ run, onAnalysisDone }) {
     }
     if (inputRef.current) inputRef.current.value = ''
     await refresh()
-    setBusy(false)
+    setUploading(false)
   }
 
   const remove = async (id) => {
@@ -37,23 +71,27 @@ export default function EvidenceManager({ run, onAnalysisDone }) {
   }
 
   const analyze = async () => {
-    setBusy(true)
     setMessage(null)
     try {
-      await api.runAnalysis()
-      await onAnalysisDone()
+      setJob(await api.startJob())
     } catch (e) {
       setMessage(e.message)
     }
-    setBusy(false)
   }
+
+  const stages = running || job?.state ? job.stages : run?.stages.map((s) => ({ ...s, note: s.message })) ?? []
+  const finished = stages.filter((s) => FINISHED.has(s.status)).length
+  const active = stages.find((s) => s.status === 'running' && s.total > 0)
+  // Overall progress: finished stages, plus the running stage's own fraction.
+  const overall = stages.length ? (finished + (active ? active.done / active.total : 0)) / stages.length : 0
+  const notes = (observations ?? []).flatMap((set) => set.warnings.map((w) => ({ w, type: set.source_type })))
 
   return (
     <Panel title="Evidence Manager">
-      <label className="block cursor-pointer rounded-md border-2 border-dashed border-slate-300 p-4 text-center text-sm text-slate-500 hover:border-slate-400">
+      <label className={`block rounded-md border-2 border-dashed border-slate-300 p-4 text-center text-sm text-slate-500 ${running || uploading ? 'opacity-50' : 'cursor-pointer hover:border-slate-400'}`}>
         <input ref={inputRef} type="file" multiple accept=".mp4,.mov,.avi,.mkv,.txt,.csv" className="hidden"
-          disabled={busy} onChange={(e) => upload([...e.target.files])} />
-        Drop or choose files — dashcam video, witness .txt, sensor .csv
+          disabled={running || uploading} onChange={(e) => upload([...e.target.files])} />
+        {uploading ? 'Uploading…' : 'Drop or choose files — video, witness .txt, sensor .csv'}
       </label>
 
       <ul className="mt-3 space-y-1.5">
@@ -61,33 +99,58 @@ export default function EvidenceManager({ run, onAnalysisDone }) {
           ? <li className="text-xs text-slate-400">No evidence uploaded — analysis runs on demo fixtures.</li>
           : <li className="text-xs text-slate-400">Results use only your evidence; stages that can't run are skipped.</li>}
         {evidence.map((e) => (
-          <li key={e.id} className="flex items-center gap-2 text-sm">
+          <li key={e.id} className="flex min-w-0 items-center gap-2 text-sm">
             <SourceBadge type={e.kind} />
-            <span className="flex-1 truncate" title={e.filename}>{e.filename}</span>
-            <span className="text-xs text-slate-400">{(e.size_bytes / 1024).toFixed(1)} KB</span>
-            <button onClick={() => remove(e.id)} className="text-xs text-slate-400 hover:text-red-600">remove</button>
+            <span className="min-w-0 flex-1 truncate" title={e.filename}>{e.filename}</span>
+            <span className="shrink-0 text-xs text-slate-400">{(e.size_bytes / 1024 / 1024).toFixed(1)} MB</span>
+            <button onClick={() => remove(e.id)} disabled={running}
+              className="shrink-0 text-xs text-slate-400 hover:text-red-600 disabled:opacity-40">remove</button>
           </li>
         ))}
       </ul>
 
-      <button onClick={analyze} disabled={busy}
+      <button onClick={analyze} disabled={running || uploading}
         className="mt-4 w-full rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">
-        {busy ? 'Working…' : 'Run analysis'}
+        {running ? `Analysing… ${Math.round(overall * 100)}% · ${elapsed(job.started_at)}` : 'Run analysis'}
       </button>
+      {running && (
+        <div className="mt-2 h-1.5 overflow-hidden rounded bg-slate-100">
+          <div className="h-full bg-sky-500 transition-all duration-500" style={{ width: `${Math.max(3, overall * 100)}%` }} />
+        </div>
+      )}
+      {job && !running && job.finished_at && (
+        <p className="mt-1 text-[11px] text-slate-400">Last run took {elapsed(job.started_at, job.finished_at)}.</p>
+      )}
       {message && <p className="mt-2 text-xs text-red-600">{message}</p>}
 
-      {run && (
+      {stages.length > 0 && (
         <div className="mt-4">
           <h3 className="mb-1 text-xs font-semibold uppercase text-slate-500">Pipeline stages</h3>
-          <ul className="space-y-1">
-            {run.stages.map((s, i) => (
-              <li key={i} className="flex items-center gap-2 text-xs" title={s.message}>
-                <span className={`w-14 rounded px-1.5 py-0.5 text-center font-medium ${STATUS_STYLES[s.status]}`}>{s.status}</span>
-                <span className="truncate">{s.stage}</span>
+          <ul className="space-y-1.5">
+            {stages.map((s) => (
+              <li key={s.stage} className="text-xs">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className={`w-16 shrink-0 rounded px-1.5 py-0.5 text-center font-medium ${STATUS_STYLES[s.status]}`}>
+                    {s.status === 'running' && s.total ? `${s.done}/${s.total}` : s.status}
+                  </span>
+                  <span className="min-w-0 truncate" title={s.stage}>{s.stage}</span>
+                </div>
+                {s.note && s.status !== 'real' && <p className="mt-0.5 pl-[4.5rem] text-[11px] text-slate-500">{s.note}</p>}
               </li>
             ))}
           </ul>
         </div>
+      )}
+
+      {!running && notes.length > 0 && (
+        <details className="mt-4">
+          <summary className="cursor-pointer text-xs font-semibold uppercase text-slate-500">Analysis notes ({notes.length})</summary>
+          <ul className="mt-1 space-y-1">
+            {notes.map(({ w, type }, i) => (
+              <li key={i} className="flex gap-1.5 text-[11px] text-slate-600"><SourceBadge type={type} /><span>{w}</span></li>
+            ))}
+          </ul>
+        </details>
       )}
     </Panel>
   )

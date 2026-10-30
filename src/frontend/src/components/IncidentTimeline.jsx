@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import ObservationList from './ObservationList'
 import Panel, { SourceBadge } from './Panel'
 
 const CATEGORY_COLORS = {
@@ -8,45 +10,64 @@ const CATEGORY_COLORS = {
   other: 'bg-slate-400',
 }
 
-export default function IncidentTimeline({ timeline, time, selectedObs, onFocus }) {
+export default function IncidentTimeline({ timeline, time, selectedObs, onFocus, observationsById }) {
+  const [selected, setSelected] = useState(null)
   if (!timeline) return <Panel title="Incident Timeline">Loading…</Panel>
 
   const events = [...timeline.events].sort((a, b) => a.t_start_s - b.t_start_s)
+  if (events.length === 0) {
+    return <Panel title="Incident Timeline"><p className="text-xs text-slate-400">No events: nothing in the evidence could be placed in time.</p></Panel>
+  }
   // Axis covers the incident window; long-running context (e.g. a signal red since t=-20) is clamped.
-  const tMin = 0
+  const tMin = Math.min(0, ...events.map((e) => e.t_start_s).filter((t) => t > -5))
   const tMax = Math.max(...events.map((e) => e.t_end_s), 1)
-  const pct = (t) => `${((Math.min(Math.max(t, tMin), tMax) - tMin) / (tMax - tMin)) * 100}%`
+  const frac = (t) => (Math.min(Math.max(t, tMin), tMax) - tMin) / (tMax - tMin)
+  const pct = (t) => `${frac(t) * 100}%`
+  const current = events.find((e) => e.id === selected)
+
+  const pick = (e) => {
+    setSelected(selected === e.id ? null : e.id)
+    onFocus(e.t_start_s, e.observation_ids)
+  }
 
   return (
-    <Panel title="Incident Timeline">
-      <div className="relative">
-        <div className="pointer-events-none absolute top-0 bottom-0 z-10 w-px bg-red-500" style={{ left: `calc(16rem + (100% - 16rem) * ${(time - tMin) / (tMax - tMin)})` }} />
-        <ul className="space-y-1">
-          {events.map((e) => {
-            const highlighted = e.observation_ids.some((id) => selectedObs.includes(id))
-            return (
-              <li key={e.id} onClick={() => onFocus(e.t_start_s, e.observation_ids)}
-                className={`flex cursor-pointer items-center rounded px-1 py-1 hover:bg-slate-50 ${highlighted ? 'bg-yellow-50 ring-1 ring-yellow-300' : ''}`}>
-                <div className="w-64 shrink-0 pr-3">
-                  <div className="text-xs font-medium">{e.label}</div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
-                    t={e.t_start_s}s{e.t_end_s !== e.t_start_s && `–${e.t_end_s}s`}
-                    {e.uncertainty_s > 0 && ` ±${e.uncertainty_s}s`}
-                    {e.source_types.map((s) => <SourceBadge key={s} type={s} />)}
-                  </div>
+    <Panel title={`Incident Timeline (${events.length})`}>
+      <ul className="space-y-1">
+        {events.map((e) => {
+          const highlighted = e.id === selected || e.observation_ids.some((id) => selectedObs.includes(id))
+          return (
+            <li key={e.id} onClick={() => pick(e)}
+              className={`flex cursor-pointer flex-col gap-1 rounded px-1 py-1 hover:bg-slate-50 sm:flex-row sm:items-center ${highlighted ? 'bg-yellow-50 ring-1 ring-yellow-300' : ''}`}>
+              <div className="min-w-0 sm:w-64 sm:shrink-0 sm:pr-3">
+                <div className="text-xs font-medium">{e.label}</div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
+                  t={e.t_start_s}s{e.t_end_s !== e.t_start_s && `–${e.t_end_s}s`}
+                  {e.uncertainty_s > 0 && ` ±${e.uncertainty_s}s`}
+                  {e.source_types.map((s) => <SourceBadge key={s} type={s} />)}
                 </div>
-                <div className="relative h-3 flex-1 rounded bg-slate-100" title={`confidence ${e.confidence}`}>
-                  <div className={`absolute top-0 h-3 rounded ${CATEGORY_COLORS[e.category]}`}
-                    style={{ left: pct(e.t_start_s), width: `max(4px, calc(${pct(e.t_end_s)} - ${pct(e.t_start_s)}))`, opacity: 0.4 + 0.6 * e.confidence }} />
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-        <div className="mt-1 flex justify-between pl-64 text-[10px] text-slate-400">
-          <span>{tMin}s</span><span>{tMax}s</span>
-        </div>
+              </div>
+              <div className="relative h-3 w-full flex-1 rounded bg-slate-100" title={`confidence ${e.confidence}`}>
+                <div className={`absolute top-0 h-3 rounded ${CATEGORY_COLORS[e.category]}`}
+                  style={{ left: pct(e.t_start_s), width: `max(4px, calc(${pct(e.t_end_s)} - ${pct(e.t_start_s)}))`, opacity: 0.4 + 0.6 * e.confidence }} />
+                <div className="pointer-events-none absolute -top-1 -bottom-1 w-px bg-red-500" style={{ left: pct(time) }} />
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+      <div className="mt-1 flex justify-between text-[10px] text-slate-400 sm:pl-64">
+        <span>{tMin}s</span><span>{tMax}s</span>
       </div>
+
+      {current && (
+        <div className="mt-3 rounded border border-slate-200 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h3 className="text-xs font-semibold text-slate-700">Evidence for “{current.label}”</h3>
+            <span className="shrink-0 text-[10px] text-slate-400">confidence {Math.round(current.confidence * 100)}%</span>
+          </div>
+          <ObservationList ids={current.observation_ids} observationsById={observationsById} />
+        </div>
+      )}
     </Panel>
   )
 }

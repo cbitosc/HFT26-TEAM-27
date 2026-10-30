@@ -1,0 +1,185 @@
+{
+  "$defs": {
+    "AnalysisRun": {
+      "properties": {
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "started_at": {
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        },
+        "finished_at": {
+          "format": "date-time",
+          "title": "Finished At",
+          "type": "string"
+        },
+        "evidence_count": {
+          "title": "Evidence Count",
+          "type": "integer"
+        },
+        "stages": {
+          "items": {
+            "$ref": "#/$defs/StageResult"
+          },
+          "title": "Stages",
+          "type": "array"
+        }
+      },
+      "required": [
+        "run_id",
+        "started_at",
+        "finished_at",
+        "evidence_count",
+        "stages"
+      ],
+      "title": "AnalysisRun",
+      "type": "object"
+    },
+    "StageProgress": {
+      "description": "Live state of one stage while a run is in progress.",
+      "properties": {
+        "stage": {
+          "title": "Stage",
+          "type": "string"
+        },
+        "status": {
+          "default": "pending",
+          "enum": [
+            "pending",
+            "running",
+            "real",
+            "fixture",
+            "skipped",
+            "error"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "done": {
+          "default": 0,
+          "title": "Done",
+          "type": "integer"
+        },
+        "total": {
+          "default": 0,
+          "title": "Total",
+          "type": "integer"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage"
+      ],
+      "title": "StageProgress",
+      "type": "object"
+    },
+    "StageResult": {
+      "properties": {
+        "stage": {
+          "title": "Stage",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "real",
+            "fixture",
+            "skipped",
+            "error"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "message": {
+          "default": "",
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage",
+        "status"
+      ],
+      "title": "StageResult",
+      "type": "object"
+    }
+  },
+  "description": "A background analysis run, polled by the dashboard (GET /api/analysis/jobs/current).",
+  "properties": {
+    "job_id": {
+      "title": "Job Id",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "running",
+        "done",
+        "failed"
+      ],
+      "title": "State",
+      "type": "string"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    },
+    "finished_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Finished At"
+    },
+    "stages": {
+      "items": {
+        "$ref": "#/$defs/StageProgress"
+      },
+      "title": "Stages",
+      "type": "array"
+    },
+    "run": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AnalysisRun"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error"
+    }
+  },
+  "required": [
+    "job_id",
+    "state",
+    "started_at",
+    "stages"
+  ],
+  "title": "AnalysisJob",
+  "type": "object"
+}
