@@ -22,7 +22,8 @@
       "desc": "witness: grey hatchback never slowed",
       "type": "semantic",
       "contains": [
-        "D"
+        "D",
+        "no braking"
       ],
       "requires_llm": true
     }

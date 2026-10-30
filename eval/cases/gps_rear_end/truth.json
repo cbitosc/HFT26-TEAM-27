@@ -37,7 +37,8 @@
       "desc": "W2 says the truck never braked",
       "type": "semantic",
       "contains": [
-        "B"
+        "B",
+        "no braking"
       ],
       "requires_llm": true
     }

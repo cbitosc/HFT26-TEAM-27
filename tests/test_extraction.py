@@ -242,3 +242,30 @@ def test_optical_flow_csv_emits_motion_spikes_in_time_order(tmp_path):
 def test_unknown_layout_still_errors_with_hint(tmp_path):
     with pytest.raises(ValueError, match="Expected a time column"):
         extract_sensor(_write(tmp_path, "mystery.csv", "timestamp_s,foo,bar\n0,1,2\n1,2,3\n"))
+
+
+def test_negated_braking_and_speed_split(tmp_path, monkeypatch):
+    """'never slowed down' is no_braking whatever the model says; a speed inside a crash sentence becomes
+    its own claim about the described vehicle."""
+    from app.modules.extraction import witness as wmod
+
+    monkeypatch.setattr(config, "FEATHERLESS_API_KEY", "k")
+    monkeypatch.setattr(config, "CASE_VEHICLES", [{"id": "B", "description": "blue truck"},
+                                                  {"id": "A", "description": "white hatchback"}])
+    p = tmp_path / "w.txt"
+    p.write_text("The white hatchback braked hard.\n"
+                 "The blue truck was going slowly, maybe 20 km/h, but it still hit the hatchback.\n"
+                 "The blue truck never slowed down.\n")
+    reply = {"observations": [
+        {"line": 2, "raw_text": "The blue truck was going slowly, maybe 20 km/h, but it still hit the hatchback",
+         "vehicle_description": "blue truck", "action": "collision", "order": 2,
+         "attributes": {"speed_kmh": 20, "speed_qualifier": "maybe", "vehicles": ["blue truck", "white hatchback"]}},
+        {"line": 3, "raw_text": "The blue truck never slowed down", "vehicle_description": "blue truck",
+         "action": "moving", "order": 3, "attributes": {}}]}
+    monkeypatch.setattr(wmod, "_chat", lambda messages: json.dumps(reply))
+    out = extract_witness(_evidence(p, SourceType.witness))
+    by_action = {o.action: o for o in out.observations}
+    assert by_action["no_braking"].vehicle_id == "B"
+    assert by_action["moving"].vehicle_id == "B" and by_action["moving"].attributes["speed_kmh"] == 20
+    assert "speed_kmh" not in by_action["collision"].attributes
+    assert sorted(by_action["collision"].attributes["vehicles"]) == ["A", "B"]

@@ -46,7 +46,7 @@ def junction_side_impact() -> None:
             {"desc": "W1 overstates V2 speed", "type": "numeric_mismatch", "contains": ["V2"], "requires_llm": True},
             {"desc": "W1 says V1 had green", "type": "semantic", "contains": ["signal"], "requires_llm": True},
             {"desc": "W2 says V1 sped up", "type": "semantic", "contains": ["accelerat"], "requires_llm": True},
-            {"desc": "W1 says V2 never slowed", "type": "semantic", "contains": ["V2"], "requires_llm": True},
+            {"desc": "W1 says V2 never slowed", "type": "semantic", "contains": ["V2", "no braking"], "requires_llm": True},
             {"desc": "V1 telemetry gap", "type": "missing_evidence", "contains": ["V1", "dropout"]},
         ],
     })
@@ -97,7 +97,7 @@ def gps_rear_end() -> None:
         "conflicts": [
             {"desc": "W1 says the truck went slowly (about 20)", "type": "numeric_mismatch", "contains": ["B"],
              "requires_llm": True},
-            {"desc": "W2 says the truck never braked", "type": "semantic", "contains": ["B"], "requires_llm": True},
+            {"desc": "W2 says the truck never braked", "type": "semantic", "contains": ["B", "no braking"], "requires_llm": True},
         ],
     })
     with open(ev / "lead_gps.csv", "w", newline="") as f:     # Unix seconds, lat/lon only
@@ -160,7 +160,7 @@ def dashcam_brake() -> None:
          "collision": None,
          "events": [{"desc": "camera car brakes", "action": "braking", "vehicle": "D", "t": 4.0, "tol": 0.8},
                     {"desc": "camera car stops", "action": "stopped", "vehicle": "D", "t": 6.5, "tol": 0.8}],
-         "conflicts": [{"desc": "witness: grey hatchback never slowed", "type": "semantic", "contains": ["D"],
+         "conflicts": [{"desc": "witness: grey hatchback never slowed", "type": "semantic", "contains": ["D", "no braking"],
                         "requires_llm": True}]})
     render_dashcam(ev / "dashcam.avi", speed, duration_s=9.0)
     (ev / "witness_cyclist.txt").write_text(

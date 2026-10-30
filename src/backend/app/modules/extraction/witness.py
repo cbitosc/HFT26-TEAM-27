@@ -58,6 +58,8 @@ Always extract, each as its own observation: every traffic-light colour mentione
 attributes.signal_state, vehicle_description = whose light it was), every speed estimate, every clock time
 for the incident (action "collision" with clock_time), every vehicle description, including hedged ones.
 Only give a direction if the statement states it (e.g. "from the south" = northbound); never guess.
+A claim that a vehicle did NOT brake or slow down is action "no_braking". A speed estimate belongs to the
+vehicle it describes, even inside a sentence about the crash.
 Omit attribute keys you have no value for."""
 
 # hedge cue -> confidence ceiling it implies
@@ -224,9 +226,15 @@ def grounded_direction(quote: str) -> str | None:
     return None
 
 
+NO_BRAKING = re.compile(r"\b(never|did ?n[o']?t|didn't|without|no)\s+(even\s+)?(slow(ed|ing)?|brak(e|ed|ing)|stop(ped)?\s+"
+                        r"braking|break(ed)?)\b|\bkept (going|driving) at the same speed\b", re.I)
+
+
 def infer_action(item: dict, attrs: dict) -> str | None:
     """The LLM sometimes leaves `action` empty for timing or signal remarks; recover it from what it did fill in."""
     action = str(item.get("action") or "").strip().lower().replace(" ", "_").replace("-", "_")
+    if action in ("", "moving", "braking", "null", "none", "unknown") and NO_BRAKING.search(str(item.get("raw_text") or "")):
+        return "no_braking"  # "never slowed down", "did not brake": the words decide, whatever the model chose
     if action and action not in ("null", "none", "unknown"):
         return action
     if attrs.get("signal_state"):
@@ -323,6 +331,14 @@ def extract_witness(evidence: Evidence) -> ObservationSet:
     for c in candidates:
         if c["vid"] in known and "approach" not in c["attrs"]:
             c["attrs"]["approach"] = known[c["vid"]]
+    # A speed estimate belongs to the vehicle it describes, even when the model attached it to a crash claim.
+    for c in list(candidates):
+        if c["action"] == "collision" and "speed_kmh" in c["attrs"] and c["vid"]:
+            speed = {k: c["attrs"].pop(k) for k in ("speed_kmh", "speed_qualifier") if k in c["attrs"]}
+            candidates.append({**c, "action": "moving", "attrs": speed | ({"approach": c["attrs"]["approach"]}
+                                                                           if "approach" in c["attrs"] else {}),
+                               "ts": None, "unc": 0.0, "i": c["i"] + 0.5})
+
     # A collision in a statement that names both vehicles involves both.
     involved = sorted({c["vid"] for c in candidates if c["vid"]})
     for c in candidates:

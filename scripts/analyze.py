@@ -1,6 +1,6 @@
 """Analyse evidence files from the command line and write the incident report. No server needed.
 
-    .venv/bin/python scripts/analyze.py data/witness/*.txt data/sensor/*.csv
+    .venv/bin/python scripts/analyze.py data/witness/*.txt data/sensor/*.csv --case data/case.json
     .venv/bin/python scripts/analyze.py clip.mp4 flow.csv --out reports/case-17 --no-narrative
 
 Every file goes through the same upload checks as the API (hash, duplicate, layout), then the full
@@ -35,6 +35,8 @@ def main() -> int:
     ap.add_argument("files", nargs="+", type=Path, help="video (.mp4/.mov/.avi/.mkv), witness .txt, sensor .csv")
     ap.add_argument("--out", type=Path, default=None, help="output folder (default: reports/<run id>)")
     ap.add_argument("--no-narrative", action="store_true", help="skip the AI-drafted summary")
+    ap.add_argument("--case", type=Path, default=None,
+                    help="case settings JSON (incident, vehicles, scene, lane_markings), e.g. data/case.json")
     args = ap.parse_args()
 
     _load_dotenv()
@@ -46,6 +48,12 @@ def main() -> int:
     from app.main import app
 
     client = TestClient(app)
+    if args.case:
+        r = client.put("/api/incident", json=json.loads(args.case.read_text()))
+        if r.status_code != 200:
+            sys.exit(f"case settings rejected: {r.text}")
+        print(f"  case {r.json()['incident_id']}: {len(r.json()['vehicles'])} declared vehicle(s), "
+              f"scene {r.json()['scene']['type']}, lane markings {(r.json()['lane_markings'] or {}).get('preset', 'none')}")
     ok = 0
     for f in args.files:
         r = client.post("/api/evidence", files={"file": (f.name, f.read_bytes())})
