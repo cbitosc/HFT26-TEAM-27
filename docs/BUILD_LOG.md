@@ -261,3 +261,19 @@ Fixes integration issues 1 and 2 found after the merge. Only module 4 changed; m
 Result: the demo run now gives exactly the 7 conflicts of `fixtures/conflicts.json` (by type and subject). Sensor-only uploads give 4 instead of 17. `pytest` **84 passed**. Dashboard rechecked: Contradiction Explorer (7), with the NB signal dispute back.
 
 Still open: issue 3 (no collision inferred from sensor-only evidence) was left as is, by choice.
+
+## 2026-10-30 · Fix: sensor extractor rejected video-derived CSVs
+
+**Error:** with the uploaded example dataset (`original_multiview.mp4`, `frame_index.csv`, `visual_motion_proxy.csv`) both CSV stages ended in `error`: `ValueError: unrecognised sensor CSV headers`. The extractor knew only vehicle tracks (time + speed) and signal logs. These files are derived from the video, use relative `timestamp_s` seconds, and have neither layout. On error the pipeline also served the demo sensor fixture in their place.
+
+| File | Change |
+| --- | --- |
+| `src/backend/app/modules/extraction/sensor.py` | `timestamp_s` / `time_s` / `t_s` / `t_rel_s` / `seconds` are now time columns of kind `rel` (seconds from the reference time, i.e. recording start = t=0, same convention as module 1; a warning says the offset is unverified) |
+| same | **Optical-flow layout** (`<view>_<mean\|p95>_optical_flow...` columns): for each camera view, a p95 flow with robust z ≥ 2.5 (median/MAD) and ≥ 1.5× the view median becomes a `motion_spike` observation (`vehicle_id` null, confidence 0.3 + 0.1·z capped at 0.8, ±half the sample step). Numbered in time order. A blank first row is expected (flow needs two frames); later blanks are reported as gaps |
+| same | **Frame-index layout** (time + frame column only): no observations, plus a warning describing the range. It's a lookup table, not evidence |
+| same | Unknown layouts still raise, now with a hint listing the accepted columns |
+| `tests/test_extraction.py` | 3 tests: frame index → no observations and no error; synthetic flow CSV → spikes in time order, correct locator, gap warning; unknown layout → error with hint |
+
+Result on the example dataset: both CSV stages `real` (frame index: 0 observations; motion proxy: spikes at t=24 s in view 3, z=2.8, and t=45 s in view 1, z=2.7). Timeline, contradictions and reconstruction ran without error. `pytest` **87 passed**. No console errors on the dashboard.
+
+**Still open:** the video stage has no `FEATHERLESS_API_KEY`, so it serves `fixtures/video_observations.json`, the made-up Gachibowli V1/V2 collision. The timeline for this real dataset therefore mixes demo events (t=0–11.5 s) with the real motion spikes, and the reconstruction shows the demo collision.

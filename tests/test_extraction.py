@@ -199,3 +199,42 @@ def test_witness_with_mocked_llm(mock_llm):
 ])
 def test_resolve_vehicle(desc, vid):
     assert witness_mod.resolve_vehicle(desc) == vid
+
+
+# ---------------------------------------------------------------- video-derived sensor CSVs
+
+def _write(tmp_path: Path, name: str, text: str) -> Evidence:
+    path = tmp_path / name
+    path.write_text(text)
+    return _evidence(path, SourceType.sensor)
+
+
+def test_frame_index_csv_yields_no_observations_but_no_error(tmp_path):
+    rows = "\n".join(f"{t},{t * 12},frames/frame_{t:04d}.jpg,sample" for t in range(10))
+    out = extract_sensor(_write(tmp_path, "frame_index.csv", "timestamp_s,source_frame_approx,frame_file,note\n" + rows))
+    assert out.observations == []
+    assert any("frame index" in w for w in out.warnings)
+
+
+def test_optical_flow_csv_emits_motion_spikes_in_time_order(tmp_path):
+    header = ("timestamp_s,view_1_mean_optical_flow_px_per_frame,view_1_p95_optical_flow_px_per_frame,"
+              "view_2_mean_optical_flow_px_per_frame,view_2_p95_optical_flow_px_per_frame")
+    lines = ["0,,,,"]  # flow needs two frames: the first row is always empty
+    for t in range(1, 30):
+        v1 = 40.0 if t == 20 else 10.0 + (t % 3)
+        v2 = 45.0 if t == 7 else 12.0 + (t % 2)
+        lines.append(f"{t},{v1 / 5},{v1},{v2 / 5},{v2}")
+    lines.append("30,,,1,12")  # a real gap in view 1
+    out = extract_sensor(_write(tmp_path, "visual_motion_proxy.csv", header + "\n" + "\n".join(lines)))
+    ObservationSet.model_validate(out.model_dump())
+    spikes = [(o.id, o.t_rel_s, o.attributes["view"]) for o in out.observations]
+    assert spikes == [("sen_motion_001", 7.0, "view_2"), ("sen_motion_002", 20.0, "view_1")]
+    assert all(o.action == "motion_spike" and o.vehicle_id is None and o.confidence <= 0.8 for o in out.observations)
+    assert out.observations[1].source_ref.locator == "row:22"
+    gap_warnings = [w for w in out.warnings if "no flow value" in w]
+    assert len(gap_warnings) == 1 and "view_1" in gap_warnings[0] and "32" in gap_warnings[0]
+
+
+def test_unknown_layout_still_errors_with_hint(tmp_path):
+    with pytest.raises(ValueError, match="Expected a time column"):
+        extract_sensor(_write(tmp_path, "mystery.csv", "timestamp_s,foo,bar\n0,1,2\n1,2,3\n"))

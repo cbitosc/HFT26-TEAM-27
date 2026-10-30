@@ -6,6 +6,9 @@ column names added to the alias tables below:
 * vehicle tracks (telematics, OBD, ...): a time column, a speed column and
   optionally position, heading, brake and vehicle/unit id columns
 * signal controller logs: time, approach and state columns
+* video-derived series: optical-flow motion per camera view (``<view>_mean|p95_optical_flow...``)
+  and frame indexes (time + frame number only). Their ``timestamp_s`` is seconds into
+  the recording, taken as seconds from the incident reference time, as module 1 does
 
 Instead of one observation per row it emits the moments that matter
 downstream: a motion summary, braking onset, entering the intersection, a
@@ -27,7 +30,8 @@ PRODUCER = "extraction.sensor/pandas"
 
 # column name -> how to parse it
 TIME_COLS = {"timestamp": "iso", "time": "iso", "datetime": "iso", "ts": "iso",
-             "epoch_ms": "ms", "timestamp_ms": "ms", "epoch_s": "s", "epoch": "s"}
+             "epoch_ms": "ms", "timestamp_ms": "ms", "epoch_s": "s", "epoch": "s",
+             "timestamp_s": "rel", "time_s": "rel", "t_s": "rel", "t_rel_s": "rel", "seconds": "rel"}
 # column name -> (factor to km/h, unit label for the raw attribute)
 SPEED_COLS = {"speed_kmh": (1.0, "kmh"), "speed_kph": (1.0, "kmh"), "speed_mph": (1.609344, "mph"),
               "speed_ms": (3.6, "ms"), "speed_mps": (3.6, "ms")}
@@ -38,6 +42,8 @@ BRAKE_COLS = ("brake", "brake_pedal", "braking", "brake_on")
 VEHICLE_COLS = ("vehicle_id", "unit_id", "vehicle", "device_id")
 APPROACH_COLS = ("approach", "phase", "direction")
 STATE_COLS = ("state", "signal_state", "signal", "color", "colour")
+FRAME_COLS = ("source_frame_approx", "source_frame", "frame", "frame_index", "frame_no", "frame_number")
+FLOW_COL = re.compile(r"^(?P<view>.+?)_(?P<stat>mean|p95|max|median)_optical_flow")
 
 # Telemetry unit ids whose vehicle is known from the incident file.
 UNIT_TO_VEHICLE = {"OBD-7731": "V2"}
@@ -49,6 +55,8 @@ HEADING_JUMP_DEG = 10.0
 BOX_HALF_M = 3.5          # intersection box: two 3.5 m lanes each side of the centre lines
 GAP_FACTOR = 1.5          # a step longer than 1.5x the median interval is a gap
 DECEL_BRAKE_KMH_PER_S = 7.2  # 2 m/s^2: braking inferred from speed when there is no brake column
+FLOW_SPIKE_Z = 2.5        # robust z-score (median/MAD) of a view's p95 flow that counts as a motion spike
+FLOW_SPIKE_RATIO = 1.5    # ...and at least this multiple of the view's median
 
 
 def _pick(cols: list[str], names) -> str | None:
@@ -64,6 +72,9 @@ def _round(v, nd: int = 2):
 
 
 def _parse_times(series: pd.Series, kind: str) -> pd.Series:
+    if kind == "rel":  # seconds from the start of the recording = from the reference time
+        secs = pd.to_numeric(series, errors="coerce")
+        return pd.Timestamp(config.INCIDENT_REFERENCE_TIME) + pd.to_timedelta(secs, unit="s")
     if kind == "iso":
         ts = pd.to_datetime(series, format="ISO8601", utc=True, errors="coerce")
     else:
@@ -252,6 +263,77 @@ def _extract_track(track: pd.DataFrame, b: _Builder, vid: str | None, desc: str 
         emit()
 
 
+# ------------------------------------------------------ video-derived series
+
+def _flow_columns(cols: list[str]) -> dict[str, dict[str, str]]:
+    """{view: {stat: column}} for optical-flow columns."""
+    views: dict[str, dict[str, str]] = {}
+    for c in cols:
+        if m := FLOW_COL.match(c):
+            views.setdefault(m["view"], {})[m["stat"]] = c
+    return views
+
+
+def _extract_motion(df: pd.DataFrame, b: _Builder, views: dict[str, dict[str, str]]) -> None:
+    """Optical-flow motion per camera view -> motion spikes (candidate impacts / sudden manoeuvres).
+
+    The flow says how much the image moved, not which vehicle moved, so vehicle_id stays null
+    and confidence is modest: these are pointers for the timeline, not vehicle measurements.
+    """
+    df = _with_time(df, b)
+    if len(df) < 2:
+        return
+    step = float(df["_t"].diff().median())
+    b.warnings.append(f"{b.file}: timestamp_s read as seconds from the incident reference time "
+                      f"(recording start assumed to be t=0; offset not verified).")
+    spikes = []  # (t, view, emit) so ids are numbered in time order
+    for view, stats in sorted(views.items()):
+        col = stats.get("p95") or stats.get("max") or stats.get("mean") or next(iter(stats.values()))
+        vals = pd.to_numeric(df[col], errors="coerce")
+        missing = vals.isna()
+        # Flow needs two frames, so the first sample is always empty; later blanks are gaps.
+        first_valid = vals.first_valid_index()
+        gaps = df.loc[missing & (df.index > (first_valid if first_valid is not None else -1)), "_row"]
+        if len(gaps):
+            b.warnings.append(f"{b.file}: {view} has no flow value in rows {', '.join(map(str, gaps))}.")
+        valid = vals.dropna()
+        if len(valid) < 5:
+            b.warnings.append(f"{b.file}: {view} has too few flow samples to judge spikes.")
+            continue
+        med = float(valid.median())
+        mad = float((valid - med).abs().median()) * 1.4826
+        if mad <= 0:
+            continue
+        mean_col = stats.get("mean")
+        for i in valid.index:
+            z = (vals[i] - med) / mad
+            if z < FLOW_SPIKE_Z or vals[i] < FLOW_SPIKE_RATIO * med:
+                continue
+            rec = df.loc[i]
+            spikes.append((float(rec["_t"]), view, lambda i=i, rec=rec, z=z, view=view, col=col, med=med, mean_col=mean_col: b.add(
+                  b.next_id("sen_motion"), _row_locator(int(rec["_row"])), rec["_ts"], float(rec["_t"]),
+                  "motion_spike",
+                  attributes={"view": view, "flow_stat": col.split("_optical_flow")[0].rsplit("_", 1)[-1],
+                              "flow_px_per_frame": _round(vals[i]),
+                              "mean_flow_px_per_frame": _round(pd.to_numeric(rec[mean_col], errors="coerce")) if mean_col else None,
+                              "view_median_px_per_frame": _round(med), "robust_z": _round(z, 1)},
+                  confidence=round(min(0.8, 0.3 + 0.1 * z), 2), uncertainty=step / 2 if step else 0.5)))
+    for _, _, emit in sorted(spikes, key=lambda s: (s[0], s[1])):
+        emit()
+    if not b.observations:
+        b.warnings.append(f"{b.file}: no motion spikes above z={FLOW_SPIKE_Z:g} in any view.")
+
+
+def _describe_frame_index(df: pd.DataFrame, b: _Builder, fcol: str) -> None:
+    """A time -> frame lookup carries no vehicle evidence; note it instead of failing."""
+    df = _with_time(df, b)
+    if df.empty:
+        return
+    b.warnings.append(f"{b.file}: frame index ({len(df)} rows, t={df['_t'].iloc[0]:g}–{df['_t'].iloc[-1]:g} s, "
+                      f"'{fcol}' {df[fcol].iloc[0]}–{df[fcol].iloc[-1]}). It maps time to video frames and "
+                      f"contains no vehicle measurements, so it yields no observations.")
+
+
 def _extract_tracks(df: pd.DataFrame, b: _Builder) -> None:
     cols = list(df.columns)
     scol = _pick(cols, SPEED_COLS)
@@ -292,8 +374,13 @@ def extract_sensor(evidence: Evidence) -> ObservationSet:
         _extract_signals(df, b)
     elif has_time and _pick(cols, SPEED_COLS):
         _extract_tracks(df, b)
+    elif has_time and (views := _flow_columns(cols)):
+        _extract_motion(df, b, views)
+    elif has_time and (fcol := _pick(cols, FRAME_COLS)):
+        _describe_frame_index(df, b, fcol)
     else:
-        raise ValueError(f"{file}: unrecognised sensor CSV headers {cols[:-1]}")
+        raise ValueError(f"{file}: unrecognised sensor CSV headers {cols[:-1]}. Expected a time column "
+                         f"({', '.join(TIME_COLS)}) plus speed, signal state, optical-flow or frame columns.")
 
     b.observations.sort(key=lambda o: (o.t_rel_s if o.t_rel_s is not None else float("inf")))
     return ObservationSet(source_type=SourceType.sensor, evidence_id=evidence.id, producer=PRODUCER,
