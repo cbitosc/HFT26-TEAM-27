@@ -15,3 +15,6 @@ dist/
 .env
 
 .DS_Store
+
+# CLI output (scripts/analyze.py)
+reports/

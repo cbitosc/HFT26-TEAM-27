@@ -47,6 +47,25 @@
       "format": "date-time",
       "title": "Uploaded At",
       "type": "string"
+    },
+    "sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Content hash taken at upload (chain of custody)",
+      "title": "Sha256"
+    },
+    "details": {
+      "additionalProperties": true,
+      "description": "Upload-time inspection, e.g. video fps or CSV layout",
+      "title": "Details",
+      "type": "object"
     }
   },
   "required": [

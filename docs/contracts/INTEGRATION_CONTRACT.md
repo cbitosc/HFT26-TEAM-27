@@ -1,6 +1,6 @@
 # Integration contract
 
-**Source of truth:** [`src/backend/app/schemas.py`](../../src/backend/app/schemas.py) (schema version `1.0.2`).
+**Source of truth:** [`src/backend/app/schemas.py`](../../src/backend/app/schemas.py) (schema version `1.0.3`).
 JSON Schema copies live in [`schemas/`](schemas/). Regenerate them with `python scripts/export_schemas.py`.
 Example payloads for every shape are in [`/fixtures`](../../fixtures).
 
@@ -46,12 +46,17 @@ upload ──► Evidence ──► [1] analyze_video    ─┐
 | Method | Path | Returns |
 | --- | --- | --- |
 | GET | `/api/health` | status, schema version |
-| GET / POST | `/api/evidence` | list / upload (`multipart file`). Type is picked by extension: `.mp4 .mov .avi .mkv` → video, `.txt` → witness, `.csv` → sensor |
+| GET / POST | `/api/evidence` | list / upload (`multipart file`). Type by extension: `.mp4 .mov .avi .mkv` → video, `.txt` → witness, `.csv` → sensor. Upload records `sha256` and `details` (video fps/duration, CSV layout); **409** for a duplicate, **422** for an unusable file (undecodable video, unknown CSV layout, empty/non-UTF-8 text) |
 | DELETE | `/api/evidence/{id}` | 204 |
 | POST | `/api/analysis/run` | Synchronous run → `AnalysisRun`, per-stage status `real \| fixture \| skipped \| error`. 409 while another run is in progress |
 | POST | `/api/analysis/jobs` | Starts a background run (or returns the running one) → `AnalysisJob` (202) |
 | GET | `/api/analysis/jobs/current` | Latest `AnalysisJob` with live per-stage progress (`pending \| running` + `done/total`), or `null` |
 | GET | `/api/evidence/{id}/frames/{index}?width=480` | One frame of an uploaded video as JPEG (thumbnails for `frame:<n>` refs) |
+| GET / PUT | `/api/incident` | Case details `IncidentInfo`: id, title, location, **reference time** (t = 0). Re-run after changing it |
+| GET | `/api/report?format=json\|markdown&narrative=true` | `IncidentReport` of the latest run (Markdown document with citations; AI summary only with a key) |
+| GET | `/api/runs` | Every kept run (last 50), newest first, each with its evidence manifest (sha256) and stage timings |
+| GET | `/api/runs/{run_id}/{run\|observations\|timeline\|conflicts\|reconstruction\|report}` | Outputs of a past run |
+| GET | `/api/audit?limit=200` | Append-only audit log: uploads, rejections, deletions, incident changes, runs |
 | GET | `/api/analysis/latest` | last `AnalysisRun` or `null` |
 | GET | `/api/observations` | `ObservationSet[]` |
 | GET | `/api/timeline` | `Timeline` |

@@ -9,7 +9,10 @@ timeline, a list of contradictions between sources, and an animated reconstructi
 ```
 src/backend/app/
   schemas.py          integration contract (Pydantic). Read this first.
-  pipeline.py         runs modules 1→5; falls back to fixtures on NotImplementedError
+  pipeline.py         runs modules 1→5 (+ 2c fusion); demo mode serves fixtures, live mode skips
+  jobs.py             background runs with live progress (one at a time)
+  report.py           investigator report (Markdown/JSON) with citations
+  store.py            evidence index, run history (storage/runs/<id>), audit log (storage/audit.jsonl)
   routers/            FastAPI endpoints (/api/evidence, /api/analysis/run, /api/timeline, ...)
   modules/<name>/     one package per architecture module; each one is a stub until built
 src/frontend/src/     React + Vite + Tailwind dashboard (4 panels in components/)
@@ -31,6 +34,7 @@ npm --prefix src/frontend install && npm --prefix src/frontend run dev   # http:
 .venv/bin/python scripts/generate_sensor_data.py   # regenerate data/ from scenario.py
 .venv/bin/python scripts/generate_witness_statements.py
 .venv/bin/python scripts/export_schemas.py         # after any schemas.py change
+.venv/bin/python scripts/analyze.py data/witness/*.txt data/sensor/*.csv   # CLI: analyse files -> reports/<run>/report.md
 ```
 
 ## Rules

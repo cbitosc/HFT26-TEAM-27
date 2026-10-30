@@ -313,7 +313,8 @@ def _extract_motion(df: pd.DataFrame, b: _Builder, views: dict[str, dict[str, st
             spikes.append((float(rec["_t"]), view, lambda i=i, rec=rec, z=z, view=view, col=col, med=med, mean_col=mean_col: b.add(
                   b.next_id("sen_motion"), _row_locator(int(rec["_row"])), rec["_ts"], float(rec["_t"]),
                   "motion_spike",
-                  attributes={"view": view, "flow_stat": col.split("_optical_flow")[0].rsplit("_", 1)[-1],
+                  attributes={"view": int(m.group(1)) if (m := re.fullmatch(r"view_?(\d+)", view)) else view,
+                              "flow_stat": col.split("_optical_flow")[0].rsplit("_", 1)[-1],
                               "flow_px_per_frame": _round(vals[i]),
                               "mean_flow_px_per_frame": _round(pd.to_numeric(rec[mean_col], errors="coerce")) if mean_col else None,
                               "view_median_px_per_frame": _round(med), "robust_z": _round(z, 1)},
@@ -364,23 +365,58 @@ def _extract_tracks(df: pd.DataFrame, b: _Builder) -> None:
         _extract_track(track, b, vid, desc, unit, picked)
 
 
+LAYOUTS = {"signal_log": "traffic-signal log", "vehicle_track": "vehicle track (telemetry/OBD)",
+           "optical_flow": "optical-flow motion per camera view", "frame_index": "video frame index"}
+
+
+def classify_columns(cols: list[str]) -> str | None:
+    """Which supported CSV layout these (lower-cased) headers are, or None."""
+    if _pick(cols, TIME_COLS) is None:
+        return None
+    if _pick(cols, APPROACH_COLS) and _pick(cols, STATE_COLS):
+        return "signal_log"
+    if _pick(cols, SPEED_COLS):
+        return "vehicle_track"
+    if _flow_columns(cols):
+        return "optical_flow"
+    if _pick(cols, FRAME_COLS):
+        return "frame_index"
+    return None
+
+
+def unrecognised(file: str, cols: list[str]) -> str:
+    return (f"{file}: unrecognised sensor CSV headers {cols}. Expected a time column "
+            f"({', '.join(TIME_COLS)}) plus speed, signal state, optical-flow or frame columns.")
+
+
+def inspect_csv(path: str, filename: str) -> dict:
+    """Upload-time check: layout, row count and time span, without extracting. Raises ValueError."""
+    df = pd.read_csv(path, dtype=str, skipinitialspace=True, keep_default_na=False)
+    cols = [str(c).strip().lower() for c in df.columns]
+    if df.empty:
+        raise ValueError(f"{filename}: no data rows")
+    layout = classify_columns(cols)
+    if layout is None:
+        raise ValueError(unrecognised(filename, cols))
+    return {"layout": layout, "layout_name": LAYOUTS[layout], "rows": len(df), "columns": cols}
+
+
 def extract_sensor(evidence: Evidence) -> ObservationSet:
     """Parse timestamps, normalise speed units, flag missing records."""
     df, file = _read(evidence)
     b = _Builder(evidence, file)
     cols = list(df.columns)
-    has_time = _pick(cols, TIME_COLS) is not None
-    if has_time and _pick(cols, APPROACH_COLS) and _pick(cols, STATE_COLS):
+    layout = classify_columns(cols)
+    if layout == "signal_log":
         _extract_signals(df, b)
-    elif has_time and _pick(cols, SPEED_COLS):
+    elif layout == "vehicle_track":
         _extract_tracks(df, b)
-    elif has_time and (views := _flow_columns(cols)):
-        _extract_motion(df, b, views)
-    elif has_time and (fcol := _pick(cols, FRAME_COLS)):
-        _describe_frame_index(df, b, fcol)
+    elif layout == "optical_flow":
+        _extract_motion(df, b, _flow_columns(cols))
+    elif layout == "frame_index":
+        _describe_frame_index(df, b, _pick(cols, FRAME_COLS))
     else:
-        raise ValueError(f"{file}: unrecognised sensor CSV headers {cols[:-1]}. Expected a time column "
-                         f"({', '.join(TIME_COLS)}) plus speed, signal state, optical-flow or frame columns.")
+        raise ValueError(unrecognised(file, cols[:-1]))
 
     b.observations.sort(key=lambda o: (o.t_rel_s if o.t_rel_s is not None else float("inf")))
     return ObservationSet(source_type=SourceType.sensor, evidence_id=evidence.id, producer=PRODUCER,

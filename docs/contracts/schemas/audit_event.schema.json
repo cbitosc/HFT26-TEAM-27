@@ -1,0 +1,25 @@
+{
+  "description": "One line of the append-only audit log (storage/audit.jsonl).",
+  "properties": {
+    "at": {
+      "format": "date-time",
+      "title": "At",
+      "type": "string"
+    },
+    "event": {
+      "title": "Event",
+      "type": "string"
+    },
+    "data": {
+      "additionalProperties": true,
+      "title": "Data",
+      "type": "object"
+    }
+  },
+  "required": [
+    "at",
+    "event"
+  ],
+  "title": "AuditEvent",
+  "type": "object"
+}

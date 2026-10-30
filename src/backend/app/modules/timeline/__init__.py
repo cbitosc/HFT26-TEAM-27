@@ -27,7 +27,9 @@ import pandas as pd
 from app import config
 from app.schemas import Observation, ObservationSet, SourceType, Timeline, TimelineEvent
 
-REFERENCE_TIME: datetime = getattr(config, "INCIDENT_REFERENCE_TIME", None) or datetime.fromisoformat("2026-10-12T17:42:00+05:30")
+def _ref() -> datetime:
+    """The incident reference time (t = 0), read at call time: it is a per-case setting."""
+    return config.INCIDENT_REFERENCE_TIME
 
 BASE_TOLERANCE_S = 1.0     # two anchored observations this close (plus their uncertainties) can be one event
 WEAK_UNCERTAINTY_S = 30.0  # above this a timestamp is a rough clock claim, not a time
@@ -70,8 +72,8 @@ def _t_rel(o: Observation) -> float | None:
     if o.t_rel_s is not None:
         return float(o.t_rel_s)
     if o.timestamp is not None:
-        ts = o.timestamp if o.timestamp.tzinfo else o.timestamp.replace(tzinfo=REFERENCE_TIME.tzinfo)
-        return (ts - REFERENCE_TIME).total_seconds()
+        ts = o.timestamp if o.timestamp.tzinfo else o.timestamp.replace(tzinfo=_ref().tzinfo)
+        return (ts - _ref()).total_seconds()
     return None
 
 
@@ -384,7 +386,7 @@ class _Builder:
             })
         drafts.sort(key=lambda d: (d["t_start_s"], CATEGORY_ORDER[d["category"]], d["label"]))
         return [
-            TimelineEvent(id=f"evt_{i:02d}", timestamp=REFERENCE_TIME + timedelta(seconds=d["t_start_s"]), **d)
+            TimelineEvent(id=f"evt_{i:02d}", timestamp=_ref() + timedelta(seconds=d["t_start_s"]), **d)
             for i, d in enumerate(drafts, start=1)
         ]
 
@@ -458,7 +460,9 @@ class _Builder:
 
         if c.family == "signal":
             _, approach, state = c.key
-            return f"{APPROACH_NAMES.get(approach, approach or 'Unknown')} signal {state or 'unknown'}"
+            if not approach:
+                return f"Signal {state or 'state unknown'} (approach not stated)"
+            return f"{APPROACH_NAMES.get(approach, approach)} signal {state or 'unknown'}"
         if c.family == "collision":
             side = next((a["impact_side"] for a in attrs if a.get("impact_side")), None)
             return f"Collision between {who}" + (f" ({side})" if side else "")
@@ -502,7 +506,7 @@ def build_timeline(observation_sets: list[ObservationSet]) -> Timeline:
     b.place_untimed()
     return Timeline(
         incident_id=config.INCIDENT_ID,
-        reference_time=REFERENCE_TIME,
+        reference_time=_ref(),
         generated_at=datetime.now(timezone.utc),
         events=b.events(),
     )

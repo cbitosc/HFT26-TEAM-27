@@ -1,0 +1,777 @@
+[
+  {
+    "schema_version": "1.0.3",
+    "source_type": "witness",
+    "evidence_id": "ev_f743246a",
+    "producer": "extraction.witness/featherless:Qwen/Qwen3-30B-A3B-Instruct-2507",
+    "generated_at": "2026-10-30T18:39:40.284105Z",
+    "observations": [
+      {
+        "id": "wit_w1_01",
+        "source_type": "witness",
+        "source_ref": {
+          "evidence_id": "ev_f743246a",
+          "file": "witness_01_pedestrian.txt",
+          "locator": "line:7"
+        },
+        "timestamp": "2026-10-12T17:40:00+05:30",
+        "t_rel_s": null,
+        "time_uncertainty_s": 300.0,
+        "vehicle_id": null,
+        "vehicle_description": null,
+        "action": "collision",
+        "attributes": {
+          "clock_time": "17:40",
+          "vehicles": [
+            "V1",
+            "V2"
+          ]
+        },
+        "confidence": 0.56,
+        "raw_text": "It was around 5:40 in the evening, still a bit light, I didn't check my phone exactly"
+      },
+      {
+        "id": "wit_w1_02",
+        "source_type": "witness",
+        "source_ref": {
+          "evidence_id": "ev_f743246a",
+          "file": "witness_01_pedestrian.txt",
+          "locator": "line:9"
+        },
+        "timestamp": null,
+        "t_rel_s": null,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": "V1",
+        "vehicle_description": "red car, a sedan",
+        "action": "moving",
+        "attributes": {
+          "direction": "northbound",
+          "approach": "NB"
+        },
+        "confidence": 0.71,
+        "raw_text": "The red car, a sedan, was coming up Main Road from the south"
+      },
+      {
+        "id": "wit_w1_03",
+        "source_type": "witness",
+        "source_ref": {
+          "evidence_id": "ev_f743246a",
+          "file": "witness_01_pedestrian.txt",
+          "locator": "line:9"
+        },
+        "timestamp": null,
+        "t_rel_s": null,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": "V1",
+        "vehicle_description": "red car",
+        "action": "signal_state",
+        "attributes": {
+          "signal_state": "green",
+          "approach": "NB"
+        },
+        "confidence": 0.65,
+        "raw_text": "I am fairly sure its light was green when it was approaching"
+      },
+      {
+        "id": "wit_w1_04",
+        "source_type": "witness",
+        "source_ref": {
+          "evidence_id": "ev_f743246a",
+          "file": "witness_01_pedestrian.txt",
+          "locator": "line:10"
+        },
+        "timestamp": null,
+        "t_rel_s": null,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": "V2",
+        "vehicle_description": "big white SUV",
+        "action": "moving",
+        "attributes": {
+          "speed_kmh": 80.0,
+          "speed_qualifier": "at least"
+        },
+        "confidence": 0.59,
+        "raw_text": "Then a big white SUV came from my left along 5th Ave really fast, I would say at least 80 km/h"
+      },
+      {
+        "id": "wit_w1_05",
+        "source_type": "witness",
+        "source_ref": {
+          "evidence_id": "ev_f743246a",
+          "file": "witness_01_pedestrian.txt",
+          "locator": "line:12"
+        },
+        "timestamp": null,
+        "t_rel_s": null,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": "V1",
+        "vehicle_description": "red car",
+        "action": "braking",
+        "attributes": {
+          "approach": "NB"
+        },
+        "confidence": 0.71,
+        "raw_text": "The red car tried to stop, I heard the brakes, and then they hit in the middle of the junction"
+      },
+      {
+        "id": "wit_w1_06",
+        "source_type": "witness",
+        "source_ref": {
+          "evidence_id": "ev_f743246a",
+          "file": "witness_01_pedestrian.txt",
+          "locator": "line:12"
+        },
+        "timestamp": null,
+        "t_rel_s": null,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": null,
+        "vehicle_description": null,
+        "action": "collision",
+        "attributes": {
+          "vehicles": [
+            "V1",
+            "V2"
+          ]
+        },
+        "confidence": 0.71,
+        "raw_text": "The red car tried to stop, I heard the brakes, and then they hit in the middle of the junction"
+      },
+      {
+        "id": "wit_w1_07",
+        "source_type": "witness",
+        "source_ref": {
+          "evidence_id": "ev_f743246a",
+          "file": "witness_01_pedestrian.txt",
+          "locator": "line:13"
+        },
+        "timestamp": null,
+        "t_rel_s": null,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": null,
+        "vehicle_description": null,
+        "action": "post_collision_slide",
+        "attributes": {
+          "vehicles": [
+            "V1",
+            "V2"
+          ]
+        },
+        "confidence": 0.62,
+        "raw_text": "Both cars slid a few metres towards the petrol bunk side"
+      }
+    ],
+    "warnings": [
+      "witness_01_pedestrian.txt line 10: direction 'eastbound' dropped (not stated in the quote).",
+      "witness_01_pedestrian.txt: LLM gave no relative order for the events."
+    ]
+  },
+  {
+    "schema_version": "1.0.3",
+    "source_type": "witness",
+    "evidence_id": "ev_2a9ed74c",
+    "producer": "extraction.witness/featherless:Qwen/Qwen3-30B-A3B-Instruct-2507",
+    "generated_at": "2026-10-30T18:39:43.076091Z",
+    "observations": [
+      {
+        "id": "wit_w2_01",
+        "source_type": "witness",
+        "source_ref": {
+          "evidence_id": "ev_2a9ed74c",
+          "file": "witness_02_shopkeeper.txt",
+          "locator": "line:7"
+        },
+        "timestamp": "2026-10-12T17:45:00+05:30",
+        "t_rel_s": null,
+        "time_uncertainty_s": 300.0,
+        "vehicle_id": null,
+        "vehicle_description": null,
+        "action": "collision",
+        "attributes": {
+          "clock_time": "17:45",
+          "vehicles": [
+            "V1",
+            "V2"
+          ]
+        },
+        "confidence": 0.7,
+        "raw_text": "The crash happened at about quarter to six"
+      },
+      {
+        "id": "wit_w2_02",
+        "source_type": "witness",
+        "source_ref": {
+          "evidence_id": "ev_2a9ed74c",
+          "file": "witness_02_shopkeeper.txt",
+          "locator": "line:8"
+        },
+        "timestamp": null,
+        "t_rel_s": null,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": "V1",
+        "vehicle_description": "red car",
+        "action": "accelerating",
+        "attributes": {
+          "speed_qualifier": "fast"
+        },
+        "confidence": 0.85,
+        "raw_text": "The light for Main Road had already turned yellow. The red car sped up to beat the light, I am sure of it, it was going fast"
+      },
+      {
+        "id": "wit_w2_03",
+        "source_type": "witness",
+        "source_ref": {
+          "evidence_id": "ev_2a9ed74c",
+          "file": "witness_02_shopkeeper.txt",
+          "locator": "line:8"
+        },
+        "timestamp": null,
+        "t_rel_s": null,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": null,
+        "vehicle_description": null,
+        "action": "signal_state",
+        "attributes": {
+          "signal_state": "yellow"
+        },
+        "confidence": 0.85,
+        "raw_text": "The light for Main Road had already turned yellow. The red car sped up to beat the light, I am sure of it, it was going fast"
+      },
+      {
+        "id": "wit_w2_04",
+        "source_type": "witness",
+        "source_ref": {
+          "evidence_id": "ev_2a9ed74c",
+          "file": "witness_02_shopkeeper.txt",
+          "locator": "line:9"
+        },
+        "timestamp": null,
+        "t_rel_s": null,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": "V2",
+        "vehicle_description": "white vehicle, SUV or maybe a van",
+        "action": "moving",
+        "attributes": {
+          "direction": "eastbound",
+          "approach": "EB"
+        },
+        "confidence": 0.5,
+        "raw_text": "The white vehicle, I think it was an SUV or maybe a van, was coming from the west side"
+      },
+      {
+        "id": "wit_w2_05",
+        "source_type": "witness",
+        "source_ref": {
+          "evidence_id": "ev_2a9ed74c",
+          "file": "witness_02_shopkeeper.txt",
+          "locator": "line:11"
+        },
+        "timestamp": null,
+        "t_rel_s": null,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": "V1",
+        "vehicle_description": "red car",
+        "action": "entering_intersection",
+        "attributes": {
+          "order": 1
+        },
+        "confidence": 0.79,
+        "raw_text": "The red car went into the junction first and then the white one hit it on the side"
+      },
+      {
+        "id": "wit_w2_06",
+        "source_type": "witness",
+        "source_ref": {
+          "evidence_id": "ev_2a9ed74c",
+          "file": "witness_02_shopkeeper.txt",
+          "locator": "line:11"
+        },
+        "timestamp": null,
+        "t_rel_s": null,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": null,
+        "vehicle_description": "white vehicle",
+        "action": "collision",
+        "attributes": {
+          "vehicles": [
+            "V1",
+            "V2"
+          ],
+          "approach": "EB",
+          "order": 2
+        },
+        "confidence": 0.79,
+        "raw_text": "The red car went into the junction first and then the white one hit it on the side"
+      }
+    ],
+    "warnings": []
+  },
+  {
+    "schema_version": "1.0.3",
+    "source_type": "sensor",
+    "evidence_id": "ev_5105f30b",
+    "producer": "extraction.sensor/pandas",
+    "generated_at": "2026-10-30T18:39:29.521244Z",
+    "observations": [
+      {
+        "id": "sig_001",
+        "source_type": "sensor",
+        "source_ref": {
+          "evidence_id": "ev_5105f30b",
+          "file": "signal_controller.csv",
+          "locator": "row:2"
+        },
+        "timestamp": "2026-10-12T17:41:40+05:30",
+        "t_rel_s": -20.0,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": null,
+        "vehicle_description": null,
+        "action": "signal_state",
+        "attributes": {
+          "approach": "EB",
+          "signal_state": "red"
+        },
+        "confidence": 1.0,
+        "raw_text": null
+      },
+      {
+        "id": "sig_002",
+        "source_type": "sensor",
+        "source_ref": {
+          "evidence_id": "ev_5105f30b",
+          "file": "signal_controller.csv",
+          "locator": "row:3"
+        },
+        "timestamp": "2026-10-12T17:41:40+05:30",
+        "t_rel_s": -20.0,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": null,
+        "vehicle_description": null,
+        "action": "signal_state",
+        "attributes": {
+          "approach": "NB",
+          "signal_state": "green"
+        },
+        "confidence": 1.0,
+        "raw_text": null
+      },
+      {
+        "id": "sig_003",
+        "source_type": "sensor",
+        "source_ref": {
+          "evidence_id": "ev_5105f30b",
+          "file": "signal_controller.csv",
+          "locator": "row:4"
+        },
+        "timestamp": "2026-10-12T17:42:07+05:30",
+        "t_rel_s": 7.0,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": null,
+        "vehicle_description": null,
+        "action": "signal_state",
+        "attributes": {
+          "approach": "NB",
+          "signal_state": "yellow",
+          "previous_state": "green"
+        },
+        "confidence": 1.0,
+        "raw_text": null
+      },
+      {
+        "id": "sig_004",
+        "source_type": "sensor",
+        "source_ref": {
+          "evidence_id": "ev_5105f30b",
+          "file": "signal_controller.csv",
+          "locator": "row:5"
+        },
+        "timestamp": "2026-10-12T17:42:10+05:30",
+        "t_rel_s": 10.0,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": null,
+        "vehicle_description": null,
+        "action": "signal_state",
+        "attributes": {
+          "approach": "NB",
+          "signal_state": "red",
+          "previous_state": "yellow"
+        },
+        "confidence": 1.0,
+        "raw_text": null
+      },
+      {
+        "id": "sig_005",
+        "source_type": "sensor",
+        "source_ref": {
+          "evidence_id": "ev_5105f30b",
+          "file": "signal_controller.csv",
+          "locator": "row:6"
+        },
+        "timestamp": "2026-10-12T17:42:11+05:30",
+        "t_rel_s": 11.0,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": null,
+        "vehicle_description": null,
+        "action": "signal_state",
+        "attributes": {
+          "approach": "EB",
+          "signal_state": "green",
+          "previous_state": "red"
+        },
+        "confidence": 1.0,
+        "raw_text": null
+      }
+    ],
+    "warnings": []
+  },
+  {
+    "schema_version": "1.0.3",
+    "source_type": "sensor",
+    "evidence_id": "ev_1fe2c2fe",
+    "producer": "extraction.sensor/pandas",
+    "generated_at": "2026-10-30T18:39:29.520201Z",
+    "observations": [
+      {
+        "id": "sen_v1_001",
+        "source_type": "sensor",
+        "source_ref": {
+          "evidence_id": "ev_1fe2c2fe",
+          "file": "v1_telematics.csv",
+          "locator": "row:2"
+        },
+        "timestamp": "2026-10-12T17:42:00+05:30",
+        "t_rel_s": 0.0,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": "V1",
+        "vehicle_description": null,
+        "action": "moving",
+        "attributes": {
+          "speed_kmh": 46.8,
+          "x_m": -1.75,
+          "y_m": -126.75,
+          "heading_deg": 0.0,
+          "summary": {
+            "t_start_s": 0.0,
+            "t_end_s": 13.0,
+            "samples": 25,
+            "sample_rate_hz": 2.0,
+            "max_speed_kmh": 46.8,
+            "min_speed_kmh": 0.0
+          }
+        },
+        "confidence": 0.98,
+        "raw_text": null
+      },
+      {
+        "id": "sen_v1_gap_01",
+        "source_type": "sensor",
+        "source_ref": {
+          "evidence_id": "ev_1fe2c2fe",
+          "file": "v1_telematics.csv",
+          "locator": "rows:14-15"
+        },
+        "timestamp": "2026-10-12T17:42:06+05:30",
+        "t_rel_s": 6.0,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": "V1",
+        "vehicle_description": null,
+        "action": "sensor_gap",
+        "attributes": {
+          "gap_start_s": 6.0,
+          "gap_end_s": 7.5,
+          "missing_samples": 2,
+          "expected_interval_s": 0.5
+        },
+        "confidence": 1.0,
+        "raw_text": null
+      },
+      {
+        "id": "sen_v1_002",
+        "source_type": "sensor",
+        "source_ref": {
+          "evidence_id": "ev_1fe2c2fe",
+          "file": "v1_telematics.csv",
+          "locator": "row:18"
+        },
+        "timestamp": "2026-10-12T17:42:09+05:30",
+        "t_rel_s": 9.0,
+        "time_uncertainty_s": 0.5,
+        "vehicle_id": "V1",
+        "vehicle_description": null,
+        "action": "braking",
+        "attributes": {
+          "speed_kmh": 46.8,
+          "x_m": -1.75,
+          "y_m": -9.75,
+          "heading_deg": 0.0,
+          "brake_onset_between_s": [
+            8.5,
+            9.0
+          ],
+          "inferred_from": "brake"
+        },
+        "confidence": 0.97,
+        "raw_text": null
+      },
+      {
+        "id": "sen_v1_003",
+        "source_type": "sensor",
+        "source_ref": {
+          "evidence_id": "ev_1fe2c2fe",
+          "file": "v1_telematics.csv",
+          "locator": "row:20"
+        },
+        "timestamp": "2026-10-12T17:42:10+05:30",
+        "t_rel_s": 10.0,
+        "time_uncertainty_s": 0.5,
+        "vehicle_id": "V1",
+        "vehicle_description": null,
+        "action": "entering_intersection",
+        "attributes": {
+          "speed_kmh": 36.0,
+          "x_m": -1.75,
+          "y_m": 1.75,
+          "heading_deg": 0.0
+        },
+        "confidence": 0.95,
+        "raw_text": null
+      },
+      {
+        "id": "sen_v1_004",
+        "source_type": "sensor",
+        "source_ref": {
+          "evidence_id": "ev_1fe2c2fe",
+          "file": "v1_telematics.csv",
+          "locator": "row:21"
+        },
+        "timestamp": "2026-10-12T17:42:10.500000+05:30",
+        "t_rel_s": 10.5,
+        "time_uncertainty_s": 0.5,
+        "vehicle_id": "V1",
+        "vehicle_description": null,
+        "action": "sudden_heading_change",
+        "attributes": {
+          "heading_change_deg": 35.0,
+          "speed_kmh": 9.6,
+          "x_m": 0.03,
+          "y_m": 2.86,
+          "heading_deg": 35.0
+        },
+        "confidence": 0.9,
+        "raw_text": null
+      },
+      {
+        "id": "sen_v1_005",
+        "source_type": "sensor",
+        "source_ref": {
+          "evidence_id": "ev_1fe2c2fe",
+          "file": "v1_telematics.csv",
+          "locator": "row:23"
+        },
+        "timestamp": "2026-10-12T17:42:11.500000+05:30",
+        "t_rel_s": 11.5,
+        "time_uncertainty_s": 0.5,
+        "vehicle_id": "V1",
+        "vehicle_description": null,
+        "action": "stopped",
+        "attributes": {
+          "x_m": 1.45,
+          "y_m": 3.75,
+          "heading_deg": 35.0
+        },
+        "confidence": 0.95,
+        "raw_text": null
+      }
+    ],
+    "warnings": [
+      "v1_telematics.csv: no records between t=6.0 s and t=7.5 s (2 sample(s) missing at 2 Hz)."
+    ]
+  },
+  {
+    "schema_version": "1.0.3",
+    "source_type": "sensor",
+    "evidence_id": "ev_dcb849ce",
+    "producer": "extraction.sensor/pandas",
+    "generated_at": "2026-10-30T18:39:29.520385Z",
+    "observations": [
+      {
+        "id": "sen_v2_001",
+        "source_type": "sensor",
+        "source_ref": {
+          "evidence_id": "ev_dcb849ce",
+          "file": "v2_obd.csv",
+          "locator": "row:2"
+        },
+        "timestamp": "2026-10-12T17:42:00+05:30",
+        "t_rel_s": 0.0,
+        "time_uncertainty_s": 0.0,
+        "vehicle_id": "V2",
+        "vehicle_description": "unit OBD-7731",
+        "action": "moving",
+        "attributes": {
+          "speed_kmh": 57.6,
+          "x_m": -161.35,
+          "y_m": 1.75,
+          "heading_deg": 90.0,
+          "speed_mph_raw": 35.8,
+          "summary": {
+            "t_start_s": 0.0,
+            "t_end_s": 13.0,
+            "samples": 27,
+            "sample_rate_hz": 2.0,
+            "max_speed_kmh": 57.6,
+            "min_speed_kmh": 0.0
+          }
+        },
+        "confidence": 0.98,
+        "raw_text": null
+      },
+      {
+        "id": "sen_v2_002",
+        "source_type": "sensor",
+        "source_ref": {
+          "evidence_id": "ev_dcb849ce",
+          "file": "v2_obd.csv",
+          "locator": "row:22"
+        },
+        "timestamp": "2026-10-12T17:42:10+05:30",
+        "t_rel_s": 10.0,
+        "time_uncertainty_s": 0.5,
+        "vehicle_id": "V2",
+        "vehicle_description": null,
+        "action": "braking",
+        "attributes": {
+          "speed_kmh": 50.4,
+          "x_m": -1.75,
+          "y_m": 1.75,
+          "heading_deg": 90.0,
+          "speed_mph_raw": 31.3,
+          "brake_onset_between_s": [
+            9.5,
+            10.0
+          ],
+          "inferred_from": "brake"
+        },
+        "confidence": 0.97,
+        "raw_text": null
+      },
+      {
+        "id": "sen_v2_003",
+        "source_type": "sensor",
+        "source_ref": {
+          "evidence_id": "ev_dcb849ce",
+          "file": "v2_obd.csv",
+          "locator": "row:22"
+        },
+        "timestamp": "2026-10-12T17:42:10+05:30",
+        "t_rel_s": 10.0,
+        "time_uncertainty_s": 0.5,
+        "vehicle_id": "V2",
+        "vehicle_description": null,
+        "action": "entering_intersection",
+        "attributes": {
+          "speed_kmh": 50.4,
+          "x_m": -1.75,
+          "y_m": 1.75,
+          "heading_deg": 90.0,
+          "speed_mph_raw": 31.3
+        },
+        "confidence": 0.95,
+        "raw_text": null
+      },
+      {
+        "id": "sen_v2_004",
+        "source_type": "sensor",
+        "source_ref": {
+          "evidence_id": "ev_dcb849ce",
+          "file": "v2_obd.csv",
+          "locator": "row:23"
+        },
+        "timestamp": "2026-10-12T17:42:10.500000+05:30",
+        "t_rel_s": 10.5,
+        "time_uncertainty_s": 0.5,
+        "vehicle_id": "V2",
+        "vehicle_description": null,
+        "action": "sudden_heading_change",
+        "attributes": {
+          "heading_change_deg": -15.0,
+          "speed_kmh": 9.7,
+          "x_m": 0.25,
+          "y_m": 2.19,
+          "heading_deg": 75.0,
+          "speed_mph_raw": 6.0
+        },
+        "confidence": 0.9,
+        "raw_text": null
+      },
+      {
+        "id": "sen_v2_005",
+        "source_type": "sensor",
+        "source_ref": {
+          "evidence_id": "ev_dcb849ce",
+          "file": "v2_obd.csv",
+          "locator": "row:25"
+        },
+        "timestamp": "2026-10-12T17:42:11.500000+05:30",
+        "t_rel_s": 11.5,
+        "time_uncertainty_s": 0.5,
+        "vehicle_id": "V2",
+        "vehicle_description": null,
+        "action": "stopped",
+        "attributes": {
+          "x_m": 1.85,
+          "y_m": 2.55,
+          "heading_deg": 75.0
+        },
+        "confidence": 0.95,
+        "raw_text": null
+      }
+    ],
+    "warnings": [
+      "v2_obd.csv: speed converted from mph to km/h (raw value kept as speed_mph_raw).",
+      "v2_obd.csv: unit_id OBD-7731 mapped to V2."
+    ]
+  },
+  {
+    "schema_version": "1.0.3",
+    "source_type": "sensor",
+    "evidence_id": "fusion",
+    "producer": "fusion",
+    "generated_at": "2026-10-30T18:39:43.077065Z",
+    "observations": [
+      {
+        "id": "fus_collision_001",
+        "source_type": "sensor",
+        "source_ref": {
+          "evidence_id": "fusion",
+          "file": "(derived)",
+          "locator": "from:sen_v1_004,sen_v2_004"
+        },
+        "timestamp": "2026-10-12T17:42:10+05:30",
+        "t_rel_s": 10.0,
+        "time_uncertainty_s": 0.5,
+        "vehicle_id": null,
+        "vehicle_description": null,
+        "action": "collision",
+        "attributes": {
+          "vehicles": [
+            "V1",
+            "V2"
+          ],
+          "inferred_from": [
+            "sen_v1_004",
+            "sen_v2_004"
+          ],
+          "rule": "sudden heading changes of two vehicles within 1 s and 6 m",
+          "separation_m": 0.71,
+          "x_m": 0.14,
+          "y_m": 2.52
+        },
+        "confidence": 0.81,
+        "raw_text": null
+      }
+    ],
+    "warnings": [
+      "Inferred: collision at t=10 s from sen_v1_004, sen_v2_004 (sudden heading changes of two vehicles within 1 s and 6 m)."
+    ]
+  }
+]

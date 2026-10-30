@@ -26,6 +26,14 @@
           },
           "title": "Stages",
           "type": "array"
+        },
+        "evidence": {
+          "description": "Manifest of the evidence analysed",
+          "items": {
+            "$ref": "#/$defs/EvidenceRef"
+          },
+          "title": "Evidence",
+          "type": "array"
         }
       },
       "required": [
@@ -36,6 +44,37 @@
         "stages"
       ],
       "title": "AnalysisRun",
+      "type": "object"
+    },
+    "EvidenceRef": {
+      "description": "Which exact file a run used: the id plus its content hash.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "filename": {
+          "title": "Filename",
+          "type": "string"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        }
+      },
+      "required": [
+        "id",
+        "filename"
+      ],
+      "title": "EvidenceRef",
       "type": "object"
     },
     "StageProgress": {
@@ -100,6 +139,18 @@
           "default": "",
           "title": "Message",
           "type": "string"
+        },
+        "duration_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration S"
         }
       },
       "required": [

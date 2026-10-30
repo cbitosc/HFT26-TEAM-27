@@ -1,0 +1,89 @@
+{
+  "run_id": "d605bfa9",
+  "started_at": "2026-10-30T18:39:29.514039Z",
+  "finished_at": "2026-10-30T18:39:43.811687Z",
+  "evidence_count": 5,
+  "stages": [
+    {
+      "stage": "2. extraction.witness [witness_01_pedestrian.txt]",
+      "status": "real",
+      "message": "",
+      "duration_s": 10.77
+    },
+    {
+      "stage": "2. extraction.witness [witness_02_shopkeeper.txt]",
+      "status": "real",
+      "message": "",
+      "duration_s": 13.562
+    },
+    {
+      "stage": "2. extraction.sensor [signal_controller.csv]",
+      "status": "real",
+      "message": "",
+      "duration_s": 0.007
+    },
+    {
+      "stage": "2. extraction.sensor [v1_telematics.csv]",
+      "status": "real",
+      "message": "",
+      "duration_s": 0.006
+    },
+    {
+      "stage": "2. extraction.sensor [v2_obd.csv]",
+      "status": "real",
+      "message": "",
+      "duration_s": 0.006
+    },
+    {
+      "stage": "2c. fusion",
+      "status": "real",
+      "message": "Inferred: collision at t=10 s from sen_v1_004, sen_v2_004 (sudden heading changes of two vehicles within 1 s and 6 m).",
+      "duration_s": 0.0
+    },
+    {
+      "stage": "3. timeline",
+      "status": "real",
+      "message": "",
+      "duration_s": 0.008
+    },
+    {
+      "stage": "4. contradictions",
+      "status": "real",
+      "message": "",
+      "duration_s": 0.725
+    },
+    {
+      "stage": "5. reconstruction",
+      "status": "real",
+      "message": "",
+      "duration_s": 0.002
+    }
+  ],
+  "evidence": [
+    {
+      "id": "ev_f743246a",
+      "filename": "witness_01_pedestrian.txt",
+      "sha256": "4f6453d2339a9323f61c53602ec96f8f30ff133e8f2055f11b80bbc2aa12db99"
+    },
+    {
+      "id": "ev_2a9ed74c",
+      "filename": "witness_02_shopkeeper.txt",
+      "sha256": "f2a981f5f925e660725e4a6b10e746a8db41edfe6bb586f4249426ca2f19b191"
+    },
+    {
+      "id": "ev_5105f30b",
+      "filename": "signal_controller.csv",
+      "sha256": "cd3561c6e610af7ef2c7e3d8789579729b2b384f8e2a4b1f10a91d179d4a1e0b"
+    },
+    {
+      "id": "ev_1fe2c2fe",
+      "filename": "v1_telematics.csv",
+      "sha256": "db986cadbcaf62dab2b28610badef8ad15870a8ea13768072b8e381ad5a79dc1"
+    },
+    {
+      "id": "ev_dcb849ce",
+      "filename": "v2_obd.csv",
+      "sha256": "c714336b13b32b8a1c38a7c8a50767afda21d1fa6258ced1aa74192d53cfb282"
+    }
+  ]
+}

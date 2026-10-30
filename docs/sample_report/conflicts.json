@@ -1,0 +1,167 @@
+{
+  "schema_version": "1.0.3",
+  "incident_id": "INC-2026-1012-01",
+  "generated_at": "2026-10-30T18:39:43.809807Z",
+  "conflicts": [
+    {
+      "id": "cf_01",
+      "type": "numeric_mismatch",
+      "severity": "high",
+      "title": "V2 speed overstated by W1",
+      "description": "W1 estimates the big white SUV at 'Then a big white SUV came from my left along 5th Ave really fast, I would say at least 80 km/h'; V2 telemetry records 57.6 km/h between t=0 s and t=10 s.",
+      "observation_ids": [
+        "wit_w1_04",
+        "sen_v2_001"
+      ],
+      "t_range_s": [
+        0.0,
+        10.0
+      ],
+      "details": {
+        "claimed_kmh": 80.0,
+        "qualifier": "at least",
+        "measured_kmh": 57.6,
+        "delta_kmh": 22.4,
+        "tolerance_kmh": 15.0,
+        "rule": "claimed lower bound - max measured > 15 km/h"
+      }
+    },
+    {
+      "id": "cf_02",
+      "type": "semantic",
+      "severity": "high",
+      "title": "Northbound signal state disputed",
+      "description": "W1 says V1's light was green. The signal controller shows yellow from t=7 s to t=10 s. V1 entered the junction at t\u224810 s.",
+      "observation_ids": [
+        "wit_w1_03",
+        "sig_003"
+      ],
+      "t_range_s": [
+        7.0,
+        10.0
+      ],
+      "details": {
+        "method": "rule:signal_phase",
+        "approach": "NB",
+        "claimed_state": "green",
+        "recorded_state": "yellow",
+        "agreeing": [
+          "sig_003"
+        ]
+      }
+    },
+    {
+      "id": "cf_03",
+      "type": "missing_evidence",
+      "severity": "medium",
+      "title": "V1 telemetry dropout during yellow onset",
+      "description": "No V1 records between t=6 s and t=7.5 s, while the northbound signal changed to yellow at t=7 s. V1's reaction to the yellow cannot be confirmed from telemetry.",
+      "observation_ids": [
+        "sen_v1_gap_01",
+        "sig_003"
+      ],
+      "t_range_s": [
+        6.0,
+        7.5
+      ],
+      "details": {
+        "missing_samples": 2,
+        "gap_s": 1.5,
+        "overlapping_event_ids": [
+          "evt_06"
+        ]
+      }
+    },
+    {
+      "id": "cf_04",
+      "type": "semantic",
+      "severity": "medium",
+      "title": "W2 claims V1 accelerated; telemetry shows braking",
+      "description": "W2 says the red car 'The light for Main Road had already turned yellow. The red car sped up to beat the light, I am sure of it, it was going fast'. V1 telemetry shows constant then decreasing speed (46.8 km/h at t=0 s, 46.8 km/h at t=9 s, 36 km/h at t=10 s), braking from t=9 s.",
+      "observation_ids": [
+        "wit_w2_02",
+        "sen_v1_001",
+        "sen_v1_002",
+        "sen_v1_003"
+      ],
+      "t_range_s": [
+        7.0,
+        10.0
+      ],
+      "details": {
+        "method": "rule:speed_trend",
+        "measured_trend": "constant_then_decreasing",
+        "tolerance_kmh": 3.0,
+        "speeds_kmh": [
+          46.8,
+          46.8,
+          36.0
+        ]
+      }
+    },
+    {
+      "id": "cf_05",
+      "type": "missing_evidence",
+      "severity": "low",
+      "title": "'Eastbound signal red' has a single source",
+      "description": "'Eastbound signal red' (t=-20 s\u201311 s) is supported only by the sensor/controller log. V2's entry on this signal rests on the sensor record alone; no camera or witness saw the signal head.",
+      "observation_ids": [
+        "sig_001",
+        "sen_v2_003"
+      ],
+      "t_range_s": [
+        10.0,
+        10.0
+      ],
+      "details": {
+        "event_id": "evt_01",
+        "source_types": [
+          "sensor"
+        ]
+      }
+    },
+    {
+      "id": "cf_06",
+      "type": "missing_evidence",
+      "severity": "low",
+      "title": "'Northbound signal yellow' has a single source",
+      "description": "'Northbound signal yellow' (t=7 s\u201310 s) is supported only by the sensor/controller log. V1's entry on this signal rests on the sensor record alone; no camera or witness saw the signal head.",
+      "observation_ids": [
+        "sig_003",
+        "sen_v1_003"
+      ],
+      "t_range_s": [
+        10.0,
+        10.0
+      ],
+      "details": {
+        "event_id": "evt_06",
+        "source_types": [
+          "sensor"
+        ]
+      }
+    },
+    {
+      "id": "cf_07",
+      "type": "semantic",
+      "severity": "low",
+      "title": "V2 vehicle type ambiguous",
+      "description": "W2 is unsure whether V2 was an SUV or a van; W1 say SUV.",
+      "observation_ids": [
+        "wit_w2_04",
+        "wit_w1_04"
+      ],
+      "t_range_s": null,
+      "details": {
+        "method": "rule:vehicle_type",
+        "alternatives": [
+          "suv",
+          "van"
+        ],
+        "supported": [
+          "suv"
+        ]
+      }
+    }
+  ]
+}

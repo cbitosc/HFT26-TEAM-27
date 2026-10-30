@@ -24,8 +24,9 @@ def test_demo_run_without_evidence_uses_fixtures():
     assert run["evidence_count"] == 0
     # no uploads: extractors serve their demo fixtures; modules 3-5 run for real on them
     assert {s["status"] for s in run["stages"][:3]} == {"fixture"}
-    assert [s["status"] for s in run["stages"][3:]] == ["real", "real", "real"]
-    assert len(run["stages"]) == 6
+    by_stage = {s["stage"]: s["status"] for s in run["stages"]}
+    assert [by_stage[k] for k in ("3. timeline", "4. contradictions", "5. reconstruction")] == ["real"] * 3
+    assert by_stage["2c. fusion"] == "fixture" and len(run["stages"]) == 7
     assert client.get("/api/analysis/latest").json()["run_id"] == run["run_id"]
 
 
@@ -33,16 +34,16 @@ def test_upload_list_delete_and_run(monkeypatch):
     r = client.post("/api/evidence", files={"file": ("w.txt", b"I saw a red car.", "text/plain")})
     assert r.status_code == 201 and r.json()["kind"] == "witness"
     ev_id = r.json()["id"]
-    client.post("/api/evidence", files={"file": ("s.csv", b"a,b\n1,2\n", "text/csv")})
-    assert len(client.get("/api/evidence").json()) == 2
+    junk = client.post("/api/evidence", files={"file": ("s.csv", b"a,b\n1,2\n", "text/csv")})
+    assert junk.status_code == 422 and "unrecognised sensor CSV headers" in junk.json()["detail"]
+    assert len(client.get("/api/evidence").json()) == 1
 
     monkeypatch.setattr(config, "FEATHERLESS_API_KEY", "")
     run = client.post("/api/analysis/run").json()
-    assert run["evidence_count"] == 2
+    assert run["evidence_count"] == 1
     statuses = {s["stage"]: s["status"] for s in run["stages"]}
-    # live mode: no key -> witness skipped; junk CSV -> error; neither falls back to demo data
+    # live mode: no key -> witness skipped, and nothing falls back to demo data
     assert statuses["2. extraction.witness [w.txt]"] == "skipped"
-    assert statuses["2. extraction.sensor [s.csv]"] == "error"
     assert "fixture" not in statuses.values()
     assert client.get("/api/observations").json() == []
     assert client.get("/api/timeline").json()["events"] == []
@@ -82,11 +83,17 @@ def test_real_sensor_evidence_flows_through_modules_2_to_5():
     conflicts = client.get("/api/conflicts").json()["conflicts"]
     assert any(c["type"] == "missing_evidence" and set(c["t_range_s"] or []) == {6.0, 7.5} for c in conflicts)
     single = sorted(c["title"] for c in conflicts if c["title"].endswith("has a single source"))
-    # Only the phases each vehicle entered on are decisive (V2 on red, V1 on yellow).
-    assert single == ["'Eastbound signal red' has a single source", "'Northbound signal yellow' has a single source"]
+    # Decisive single-source events only: the (inferred) collision and the phases each vehicle entered on.
+    assert single == ["'Collision between V1 and V2' has a single source",
+                      "'Eastbound signal red' has a single source", "'Northbound signal yellow' has a single source"]
 
-    # Sensors alone carry no "collision" observation, so no marker is expected; tracks must still meet.
+    # Neither CSV shows the collision; fusion infers it from both vehicles' heading changes.
+    assert statuses["2c. fusion"] == "real"
+    collisions = [e for e in timeline["events"] if e["category"] == "collision"]
+    assert len(collisions) == 1 and abs(collisions[0]["t_start_s"] - 10.0) <= 0.5
+    assert set(collisions[0]["vehicle_ids"]) == {"V1", "V2"}
     recon = client.get("/api/reconstruction").json()
+    assert recon["collision"] and abs(recon["collision"]["t_s"] - 10.0) <= 0.5
     at_10 = {v["vehicle_id"]: next(p for p in v["track"] if p["t_s"] == 10.0) for v in recon["vehicles"]}
     assert set(at_10) == {"V1", "V2"}
     for p in at_10.values():

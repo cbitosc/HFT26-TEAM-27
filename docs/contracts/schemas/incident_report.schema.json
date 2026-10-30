@@ -1,0 +1,54 @@
+{
+  "description": "Investigator-facing report of one run (GET /api/report).",
+  "properties": {
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "incident_id": {
+      "title": "Incident Id",
+      "type": "string"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "headline": {
+      "title": "Headline",
+      "type": "string"
+    },
+    "summary": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "AI-drafted narrative, only when an LLM key is set",
+      "title": "Summary"
+    },
+    "facts": {
+      "additionalProperties": true,
+      "title": "Facts",
+      "type": "object"
+    },
+    "markdown": {
+      "title": "Markdown",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "incident_id",
+    "generated_at",
+    "headline",
+    "facts",
+    "markdown"
+  ],
+  "title": "IncidentReport",
+  "type": "object"
+}

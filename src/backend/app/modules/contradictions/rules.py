@@ -169,6 +169,8 @@ def signal_states(ctx: Context) -> list[dict]:
     claims_by_approach: dict[str, list[tuple[Observation, tuple, tuple]]] = {}
     for o in ctx.observations:
         approach = ctx.normalise_approach(o.attributes.get("approach"))
+        if approach is None and o.vehicle_id and o.source_type == SourceType.witness:
+            approach = ctx.approach_of(o.vehicle_id)  # "its light was green": the vehicle's own approach
         if o.action != "signal_state" or o.source_type == SourceType.sensor or not approach:
             continue
         entry = ctx.entry_t(o.vehicle_id) if o.source_type == SourceType.witness and o.vehicle_id else None

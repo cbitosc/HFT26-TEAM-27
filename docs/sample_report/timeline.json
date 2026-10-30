@@ -1,0 +1,323 @@
+{
+  "schema_version": "1.0.3",
+  "incident_id": "INC-2026-1012-01",
+  "reference_time": "2026-10-12T17:42:00+05:30",
+  "generated_at": "2026-10-30T18:39:43.084205Z",
+  "events": [
+    {
+      "id": "evt_01",
+      "t_start_s": -20.0,
+      "t_end_s": 11.0,
+      "timestamp": "2026-10-12T17:41:40+05:30",
+      "label": "Eastbound signal red",
+      "category": "signal",
+      "vehicle_ids": [],
+      "observation_ids": [
+        "sig_001"
+      ],
+      "source_types": [
+        "sensor"
+      ],
+      "confidence": 1.0,
+      "uncertainty_s": 0.0
+    },
+    {
+      "id": "evt_02",
+      "t_start_s": -20.0,
+      "t_end_s": 7.0,
+      "timestamp": "2026-10-12T17:41:40+05:30",
+      "label": "Northbound signal green",
+      "category": "signal",
+      "vehicle_ids": [],
+      "observation_ids": [
+        "sig_002",
+        "wit_w1_03"
+      ],
+      "source_types": [
+        "sensor",
+        "witness"
+      ],
+      "confidence": 1.0,
+      "uncertainty_s": 0.0
+    },
+    {
+      "id": "evt_03",
+      "t_start_s": 0.0,
+      "t_end_s": 9.0,
+      "timestamp": "2026-10-12T17:42:00+05:30",
+      "label": "V1 red car northbound at ~47 km/h",
+      "category": "vehicle_motion",
+      "vehicle_ids": [
+        "V1"
+      ],
+      "observation_ids": [
+        "sen_v1_001",
+        "wit_w1_02"
+      ],
+      "source_types": [
+        "sensor",
+        "witness"
+      ],
+      "confidence": 0.98,
+      "uncertainty_s": 0.0
+    },
+    {
+      "id": "evt_04",
+      "t_start_s": 0.0,
+      "t_end_s": 10.0,
+      "timestamp": "2026-10-12T17:42:00+05:30",
+      "label": "V2 big white SUV eastbound at ~58 km/h",
+      "category": "vehicle_motion",
+      "vehicle_ids": [
+        "V2"
+      ],
+      "observation_ids": [
+        "sen_v2_001",
+        "wit_w1_04",
+        "wit_w2_04"
+      ],
+      "source_types": [
+        "sensor",
+        "witness"
+      ],
+      "confidence": 0.98,
+      "uncertainty_s": 0.0
+    },
+    {
+      "id": "evt_05",
+      "t_start_s": 6.0,
+      "t_end_s": 7.5,
+      "timestamp": "2026-10-12T17:42:06+05:30",
+      "label": "V1 sensor data gap (6\u20137.5 s)",
+      "category": "other",
+      "vehicle_ids": [
+        "V1"
+      ],
+      "observation_ids": [
+        "sen_v1_gap_01"
+      ],
+      "source_types": [
+        "sensor"
+      ],
+      "confidence": 1.0,
+      "uncertainty_s": 0.0
+    },
+    {
+      "id": "evt_06",
+      "t_start_s": 7.0,
+      "t_end_s": 10.0,
+      "timestamp": "2026-10-12T17:42:07+05:30",
+      "label": "Northbound signal yellow",
+      "category": "signal",
+      "vehicle_ids": [],
+      "observation_ids": [
+        "sig_003"
+      ],
+      "source_types": [
+        "sensor"
+      ],
+      "confidence": 1.0,
+      "uncertainty_s": 0.0
+    },
+    {
+      "id": "evt_07",
+      "t_start_s": 8.5,
+      "t_end_s": 9.0,
+      "timestamp": "2026-10-12T17:42:08.500000+05:30",
+      "label": "V1 begins braking",
+      "category": "vehicle_motion",
+      "vehicle_ids": [
+        "V1"
+      ],
+      "observation_ids": [
+        "sen_v1_002",
+        "wit_w1_05"
+      ],
+      "source_types": [
+        "sensor",
+        "witness"
+      ],
+      "confidence": 0.97,
+      "uncertainty_s": 0.5
+    },
+    {
+      "id": "evt_08",
+      "t_start_s": 9.5,
+      "t_end_s": 10.0,
+      "timestamp": "2026-10-12T17:42:09.500000+05:30",
+      "label": "V2 begins braking",
+      "category": "vehicle_motion",
+      "vehicle_ids": [
+        "V2"
+      ],
+      "observation_ids": [
+        "sen_v2_002"
+      ],
+      "source_types": [
+        "sensor"
+      ],
+      "confidence": 0.97,
+      "uncertainty_s": 0.5
+    },
+    {
+      "id": "evt_09",
+      "t_start_s": 10.0,
+      "t_end_s": 10.0,
+      "timestamp": "2026-10-12T17:42:10+05:30",
+      "label": "Northbound signal red",
+      "category": "signal",
+      "vehicle_ids": [],
+      "observation_ids": [
+        "sig_004"
+      ],
+      "source_types": [
+        "sensor"
+      ],
+      "confidence": 1.0,
+      "uncertainty_s": 0.0
+    },
+    {
+      "id": "evt_10",
+      "t_start_s": 10.0,
+      "t_end_s": 10.0,
+      "timestamp": "2026-10-12T17:42:10+05:30",
+      "label": "Signal yellow (approach not stated)",
+      "category": "signal",
+      "vehicle_ids": [],
+      "observation_ids": [
+        "wit_w2_03"
+      ],
+      "source_types": [
+        "witness"
+      ],
+      "confidence": 0.85,
+      "uncertainty_s": 0.0
+    },
+    {
+      "id": "evt_11",
+      "t_start_s": 10.0,
+      "t_end_s": 10.0,
+      "timestamp": "2026-10-12T17:42:10+05:30",
+      "label": "V1 accelerates (witness claim)",
+      "category": "vehicle_motion",
+      "vehicle_ids": [
+        "V1"
+      ],
+      "observation_ids": [
+        "wit_w2_02"
+      ],
+      "source_types": [
+        "witness"
+      ],
+      "confidence": 0.85,
+      "uncertainty_s": 0.0
+    },
+    {
+      "id": "evt_12",
+      "t_start_s": 10.0,
+      "t_end_s": 10.0,
+      "timestamp": "2026-10-12T17:42:10+05:30",
+      "label": "V1 enters the junction from the south on yellow",
+      "category": "vehicle_motion",
+      "vehicle_ids": [
+        "V1"
+      ],
+      "observation_ids": [
+        "sen_v1_003",
+        "wit_w2_05"
+      ],
+      "source_types": [
+        "sensor",
+        "witness"
+      ],
+      "confidence": 0.99,
+      "uncertainty_s": 0.5
+    },
+    {
+      "id": "evt_13",
+      "t_start_s": 10.0,
+      "t_end_s": 10.0,
+      "timestamp": "2026-10-12T17:42:10+05:30",
+      "label": "V2 enters the junction from the west against red",
+      "category": "vehicle_motion",
+      "vehicle_ids": [
+        "V2"
+      ],
+      "observation_ids": [
+        "sen_v2_003"
+      ],
+      "source_types": [
+        "sensor"
+      ],
+      "confidence": 0.95,
+      "uncertainty_s": 0.5
+    },
+    {
+      "id": "evt_14",
+      "t_start_s": 10.0,
+      "t_end_s": 10.0,
+      "timestamp": "2026-10-12T17:42:10+05:30",
+      "label": "Collision between V1 and V2",
+      "category": "collision",
+      "vehicle_ids": [
+        "V1",
+        "V2"
+      ],
+      "observation_ids": [
+        "fus_collision_001",
+        "sen_v1_004",
+        "sen_v2_004",
+        "wit_w1_01",
+        "wit_w2_01",
+        "wit_w1_06",
+        "wit_w2_06"
+      ],
+      "source_types": [
+        "sensor",
+        "witness"
+      ],
+      "confidence": 1.0,
+      "uncertainty_s": 0.5
+    },
+    {
+      "id": "evt_15",
+      "t_start_s": 11.0,
+      "t_end_s": 11.0,
+      "timestamp": "2026-10-12T17:42:11+05:30",
+      "label": "Eastbound signal green",
+      "category": "signal",
+      "vehicle_ids": [],
+      "observation_ids": [
+        "sig_005"
+      ],
+      "source_types": [
+        "sensor"
+      ],
+      "confidence": 1.0,
+      "uncertainty_s": 0.0
+    },
+    {
+      "id": "evt_16",
+      "t_start_s": 11.5,
+      "t_end_s": 11.5,
+      "timestamp": "2026-10-12T17:42:11.500000+05:30",
+      "label": "V1 and V2 come to rest after the collision",
+      "category": "post_collision",
+      "vehicle_ids": [
+        "V1",
+        "V2"
+      ],
+      "observation_ids": [
+        "sen_v1_005",
+        "sen_v2_005",
+        "wit_w1_07"
+      ],
+      "source_types": [
+        "sensor",
+        "witness"
+      ],
+      "confidence": 0.997,
+      "uncertainty_s": 0.5
+    }
+  ]
+}

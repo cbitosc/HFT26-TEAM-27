@@ -1,0 +1,300 @@
+{
+  "schema_version": "1.0.3",
+  "incident_id": "INC-2026-1012-01",
+  "generated_at": "2026-10-30T18:39:43.811617Z",
+  "scene": {
+    "type": "four_way_intersection",
+    "extent_m": 60.0,
+    "lane_width_m": 3.5,
+    "roads": {
+      "ns": "Main Rd",
+      "ew": "5th Ave"
+    }
+  },
+  "t_min_s": 5.0,
+  "t_max_s": 13.0,
+  "vehicles": [
+    {
+      "vehicle_id": "V1",
+      "label": "V1 \u00b7 red car",
+      "color": "#dc2626",
+      "description": "red car",
+      "track": [
+        {
+          "t_s": 5.0,
+          "x_m": -1.75,
+          "y_m": -61.75,
+          "heading_deg": 0.0,
+          "speed_kmh": 46.8
+        },
+        {
+          "t_s": 5.5,
+          "x_m": -1.75,
+          "y_m": -55.25,
+          "heading_deg": 0.0,
+          "speed_kmh": 46.8
+        },
+        {
+          "t_s": 6.0,
+          "x_m": -1.75,
+          "y_m": -48.75,
+          "heading_deg": 0.0,
+          "speed_kmh": 46.8
+        },
+        {
+          "t_s": 6.5,
+          "x_m": -1.75,
+          "y_m": -42.25,
+          "heading_deg": 0.0,
+          "speed_kmh": 46.8
+        },
+        {
+          "t_s": 7.0,
+          "x_m": -1.75,
+          "y_m": -35.75,
+          "heading_deg": 0.0,
+          "speed_kmh": 46.8
+        },
+        {
+          "t_s": 7.5,
+          "x_m": -1.75,
+          "y_m": -29.25,
+          "heading_deg": 0.0,
+          "speed_kmh": 46.8
+        },
+        {
+          "t_s": 8.0,
+          "x_m": -1.75,
+          "y_m": -22.75,
+          "heading_deg": 0.0,
+          "speed_kmh": 46.8
+        },
+        {
+          "t_s": 8.5,
+          "x_m": -1.75,
+          "y_m": -16.25,
+          "heading_deg": 0.0,
+          "speed_kmh": 46.8
+        },
+        {
+          "t_s": 9.0,
+          "x_m": -1.75,
+          "y_m": -9.75,
+          "heading_deg": 0.0,
+          "speed_kmh": 46.8
+        },
+        {
+          "t_s": 9.5,
+          "x_m": -1.75,
+          "y_m": -3.62,
+          "heading_deg": 0.0,
+          "speed_kmh": 41.4
+        },
+        {
+          "t_s": 10.0,
+          "x_m": -1.75,
+          "y_m": 1.75,
+          "heading_deg": 0.0,
+          "speed_kmh": 36.0
+        },
+        {
+          "t_s": 10.5,
+          "x_m": 0.03,
+          "y_m": 2.86,
+          "heading_deg": 35.0,
+          "speed_kmh": 9.6
+        },
+        {
+          "t_s": 11.0,
+          "x_m": 0.74,
+          "y_m": 3.3,
+          "heading_deg": 35.0,
+          "speed_kmh": 4.8
+        },
+        {
+          "t_s": 11.5,
+          "x_m": 1.45,
+          "y_m": 3.75,
+          "heading_deg": 35.0,
+          "speed_kmh": 0.0
+        },
+        {
+          "t_s": 12.0,
+          "x_m": 1.45,
+          "y_m": 3.75,
+          "heading_deg": 35.0,
+          "speed_kmh": 0.0
+        },
+        {
+          "t_s": 12.5,
+          "x_m": 1.45,
+          "y_m": 3.75,
+          "heading_deg": 35.0,
+          "speed_kmh": 0.0
+        },
+        {
+          "t_s": 13.0,
+          "x_m": 1.45,
+          "y_m": 3.75,
+          "heading_deg": 35.0,
+          "speed_kmh": 0.0
+        }
+      ],
+      "source_observation_ids": [
+        "sen_v1_001",
+        "sen_v1_002",
+        "sen_v1_003",
+        "sen_v1_004",
+        "sen_v1_005"
+      ]
+    },
+    {
+      "vehicle_id": "V2",
+      "label": "V2 \u00b7 big white SUV",
+      "color": "#64748b",
+      "description": "big white SUV",
+      "track": [
+        {
+          "t_s": 5.0,
+          "x_m": -81.35,
+          "y_m": 1.75,
+          "heading_deg": 90.0,
+          "speed_kmh": 57.6
+        },
+        {
+          "t_s": 5.5,
+          "x_m": -73.35,
+          "y_m": 1.75,
+          "heading_deg": 90.0,
+          "speed_kmh": 57.6
+        },
+        {
+          "t_s": 6.0,
+          "x_m": -65.35,
+          "y_m": 1.75,
+          "heading_deg": 90.0,
+          "speed_kmh": 57.6
+        },
+        {
+          "t_s": 6.5,
+          "x_m": -57.35,
+          "y_m": 1.75,
+          "heading_deg": 90.0,
+          "speed_kmh": 57.6
+        },
+        {
+          "t_s": 7.0,
+          "x_m": -49.35,
+          "y_m": 1.75,
+          "heading_deg": 90.0,
+          "speed_kmh": 57.6
+        },
+        {
+          "t_s": 7.5,
+          "x_m": -41.35,
+          "y_m": 1.75,
+          "heading_deg": 90.0,
+          "speed_kmh": 57.6
+        },
+        {
+          "t_s": 8.0,
+          "x_m": -33.35,
+          "y_m": 1.75,
+          "heading_deg": 90.0,
+          "speed_kmh": 57.6
+        },
+        {
+          "t_s": 8.5,
+          "x_m": -25.35,
+          "y_m": 1.75,
+          "heading_deg": 90.0,
+          "speed_kmh": 57.6
+        },
+        {
+          "t_s": 9.0,
+          "x_m": -17.35,
+          "y_m": 1.75,
+          "heading_deg": 90.0,
+          "speed_kmh": 57.6
+        },
+        {
+          "t_s": 9.5,
+          "x_m": -9.35,
+          "y_m": 1.75,
+          "heading_deg": 90.0,
+          "speed_kmh": 57.6
+        },
+        {
+          "t_s": 10.0,
+          "x_m": -1.75,
+          "y_m": 1.75,
+          "heading_deg": 90.0,
+          "speed_kmh": 50.4
+        },
+        {
+          "t_s": 10.5,
+          "x_m": 0.25,
+          "y_m": 2.19,
+          "heading_deg": 75.0,
+          "speed_kmh": 9.7
+        },
+        {
+          "t_s": 11.0,
+          "x_m": 1.43,
+          "y_m": 2.46,
+          "heading_deg": 75.0,
+          "speed_kmh": 6.2
+        },
+        {
+          "t_s": 11.5,
+          "x_m": 1.85,
+          "y_m": 2.55,
+          "heading_deg": 75.0,
+          "speed_kmh": 0.0
+        },
+        {
+          "t_s": 12.0,
+          "x_m": 1.85,
+          "y_m": 2.55,
+          "heading_deg": 75.0,
+          "speed_kmh": 0.0
+        },
+        {
+          "t_s": 12.5,
+          "x_m": 1.85,
+          "y_m": 2.55,
+          "heading_deg": 75.0,
+          "speed_kmh": 0.0
+        },
+        {
+          "t_s": 13.0,
+          "x_m": 1.85,
+          "y_m": 2.55,
+          "heading_deg": 75.0,
+          "speed_kmh": 0.0
+        }
+      ],
+      "source_observation_ids": [
+        "sen_v2_001",
+        "sen_v2_002",
+        "sen_v2_004",
+        "sen_v2_005"
+      ]
+    }
+  ],
+  "collision": {
+    "t_s": 10.0,
+    "x_m": -1.75,
+    "y_m": 1.75,
+    "confidence": 1.0,
+    "supporting_observation_ids": [
+      "fus_collision_001",
+      "sen_v1_004",
+      "sen_v2_004",
+      "wit_w1_01",
+      "wit_w2_01",
+      "wit_w1_06",
+      "wit_w2_06"
+    ]
+  }
+}

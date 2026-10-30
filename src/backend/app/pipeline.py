@@ -13,9 +13,11 @@ on the mode:
 from __future__ import annotations
 
 import functools
+import hashlib
 import inspect
 import logging
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -24,6 +26,7 @@ from typing import Callable, Protocol
 from app import config, store
 from app.modules.contradictions import detect_conflicts
 from app.modules.extraction import extract_sensor, extract_witness
+from app.modules.fusion import fuse
 from app.modules.ingestion import analyze_video
 from app.modules.reconstruction import build_reconstruction
 from app.modules.timeline import build_timeline
@@ -31,6 +34,7 @@ from app.schemas import (
     AnalysisRun,
     ConflictReport,
     Evidence,
+    EvidenceRef,
     ObservationSet,
     Reconstruction,
     Scene,
@@ -93,6 +97,7 @@ def _run_stage(stage: str, fn: Callable, args: tuple, fixture: str, model, demo:
     """(output, result): the module's output, else the fixture (demo mode) or an empty result / None (live)."""
     fallback = "served demo fixture" if demo else "no output"
     tracker.start(stage)
+    t0 = time.perf_counter()
     if "progress" in inspect.signature(fn).parameters:  # modules that can report their own progress
         fn = functools.partial(fn, progress=lambda done, total, note: tracker.update(stage, done, total, note))
     try:
@@ -107,6 +112,7 @@ def _run_stage(stage: str, fn: Callable, args: tuple, fixture: str, model, demo:
         result = StageResult(stage=stage, status="error", message=f"{type(e).__name__}: {e}; {fallback}")
     if out is None:
         out = store.load_fixture(fixture, model) if demo else _empty(model)
+    result.duration_s = round(time.perf_counter() - t0, 3)
     tracker.finish(result)
     return out, result
 
@@ -148,15 +154,56 @@ def run_analysis(tracker: Tracker | None = None) -> AnalysisRun:
         RUN_LOCK.release()
 
 
+def _sha256(path: str) -> str | None:
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+    except OSError:
+        return None
+    return h.hexdigest()
+
+
 def _run(tracker: Tracker) -> AnalysisRun:
     started = _now()
+    run_id = uuid.uuid4().hex[:8]
     results: list[StageResult] = []
     evidence = store.list_evidence()
     demo = not evidence
-    later = ["3. timeline", "4. contradictions", "5. reconstruction"]
+    # Re-hash at run time: the manifest proves which bytes were analysed, and a changed file is flagged.
+    manifest = []
+    for e in evidence:
+        now = _sha256(e.stored_path)
+        if e.sha256 and now != e.sha256:
+            log.warning("evidence %s changed since upload", e.id)
+            store.audit("evidence_integrity_mismatch", id=e.id, filename=e.filename, uploaded=e.sha256, now=now)
+        manifest.append(EvidenceRef(id=e.id, filename=e.filename, sha256=now))
+    store.audit("analysis_started", run_id=run_id, demo=demo, evidence=[m.model_dump() for m in manifest])
+    later = ["2c. fusion", "3. timeline", "4. contradictions", "5. reconstruction"]
     tracker.plan(([_stage_name(e) for e in evidence] if evidence else [s for s, _f, _x in EXTRACTORS.values()]) + later)
 
     observation_sets = _extract_all(evidence, results, tracker)
+    if not demo:  # the demo fixtures are already complete; fusion is for real evidence
+        tracker.start(later[0])
+        t0 = time.perf_counter()
+        try:
+            fused = fuse(observation_sets)
+            r = StageResult(stage=later[0], status="real",
+                            message="; ".join(fused.warnings) if fused else "nothing to infer")
+            if fused:
+                observation_sets.append(fused)
+        except Exception as e:
+            log.exception("fusion failed")
+            r = StageResult(stage=later[0], status="error", message=f"{type(e).__name__}: {e}")
+        r.duration_s = round(time.perf_counter() - t0, 3)
+        results.append(r)
+        tracker.finish(r)
+    else:
+        r = StageResult(stage=later[0], status="fixture", message="demo fixtures need no fusion")
+        results.append(r)
+        tracker.finish(r)
+    later = later[1:]
     timeline, r = _run_stage(later[0], build_timeline, (observation_sets,), "timeline.json", Timeline, demo, tracker)
     results.append(r)
     conflicts, r = _run_stage(later[1], detect_conflicts, (observation_sets, timeline), "conflicts.json",
@@ -166,11 +213,14 @@ def _run(tracker: Tracker) -> AnalysisRun:
                           "reconstruction.json", Reconstruction, demo, tracker)
     results.append(r)
 
-    run = AnalysisRun(run_id=uuid.uuid4().hex[:8], started_at=started, finished_at=_now(),
-                      evidence_count=len(evidence), stages=results)
+    run = AnalysisRun(run_id=run_id, started_at=started, finished_at=_now(),
+                      evidence_count=len(evidence), stages=results, evidence=manifest)
     store.save_output("observations.json", observation_sets)
     store.save_output("timeline.json", timeline)
     store.save_output("conflicts.json", conflicts)
     store.save_output("reconstruction.json", recon)
     store.save_output("run.json", run)
+    store.archive_latest(run.run_id)
+    store.audit("analysis_finished", run_id=run.run_id, duration_s=round((run.finished_at - started).total_seconds(), 2),
+                stages={s.stage: s.status for s in results})
     return run

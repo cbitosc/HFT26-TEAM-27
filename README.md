@@ -37,6 +37,38 @@ Details regarding the chosen problem statement track and technical requirements.
 
 ---
 
+## 🚦 Our Solution: Evidence-Grounded Incident Reconstruction
+
+Upload what an investigator actually has (traffic-camera or dashcam video, witness statements, sensor
+and telemetry CSVs) and get one cited account of what happened:
+
+- **One timeline across all sources.** Every event links back to the exact frame, line or row it came from.
+- **Contradictions found automatically:** a witness's speed vs telemetry, a claimed green light vs the
+  signal log, clock times, "sped up" vs braking, and gaps in the evidence. Rule-verified first, LLM-assisted
+  second, and never presented as more certain than they are.
+- **Verified video findings.** For fixed traffic cameras, a "stopped vehicle" claim from the vision model is
+  only kept if the image patch is unchanged a few seconds later.
+- **Cross-source fusion.** A collision is inferred when two vehicles' separate telemetry logs both turn
+  sharply at the same moment and place.
+- **Chain of custody.** SHA-256 at upload, duplicate and bad-file rejection, an evidence manifest per run,
+  run history, and an append-only audit log.
+- **An investigator report** (Markdown/JSON) with citations, evidence gaps and an AI-drafted summary
+  labelled as such. Sample: [`docs/sample_report/report.md`](docs/sample_report/report.md).
+
+### Quick start
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r src/backend/requirements.txt
+echo "FEATHERLESS_API_KEY=<your key>" > .env          # optional: enables video and witness analysis
+.venv/bin/python scripts/analyze.py data/witness/*.txt data/sensor/*.csv   # CLI -> reports/<run>/report.md
+cd src/backend && ../../.venv/bin/uvicorn app.main:app --port 8000 --env-file ../../.env   # API: /docs
+```
+
+Architecture: [`docs/contracts/INTEGRATION_CONTRACT.md`](docs/contracts/INTEGRATION_CONTRACT.md) ·
+change log: [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md).
+
+---
+
 ## 🛠️ Contribution & Submission Workflow
 
 All teams must follow the official fork-and-pull-request workflow:

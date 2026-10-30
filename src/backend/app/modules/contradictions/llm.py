@@ -16,28 +16,61 @@ from .context import Context
 
 log = logging.getLogger(__name__)
 
-MODEL = os.environ.get("FEATHERLESS_CONTRADICTIONS_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+MODEL = os.environ.get("FEATHERLESS_CONTRADICTIONS_MODEL", "Qwen/Qwen3-30B-A3B-Instruct-2507")
 TIMEOUT_S = 30.0
 
-PROMPT = """You compare witness claims about a traffic collision with the measured record.
-Report only claims that clearly contradict the record. Ignore claims that merely add detail.
-Reply with JSON only: {"conflicts": [{"witness_observation_id": str, "record_observation_ids": [str],
-"severity": "low"|"medium"|"high", "title": str, "description": str}]}
+PROMPT = """You compare witness claims about a traffic collision with the measured record (sensors, cameras).
+A claim CONTRADICTS the record only if the record shows the opposite of what the witness says.
+If the record agrees with the claim, or simply says nothing about it, it is NOT a contradiction: leave it out.
+For each contradiction, cite the record line ids that show the opposite. Most claims are not contradictions;
+an empty list is a normal answer. Reply with JSON only:
+{"conflicts": [{"witness_observation_id": str, "record_observation_ids": [str], "title": str,
+"description": "what the witness says vs what the record shows, one or two sentences"}]}
 
 Witness claims (id: quote):
 %s
 
-Measured record (id: t_rel_s, vehicle, action, attributes):
+Measured record, per vehicle, in time order (id: what was measured):
 %s
 """
+
+# Witness action -> record actions that mean the same thing (agreement, not conflict).
+_AGREES = {"braking": {"braking", "stopped"}, "stopped": {"stopped"}, "moving": {"moving"},
+           "entering_intersection": {"entering_intersection"}, "collision": {"collision"},
+           "post_collision_slide": {"stopped", "sudden_heading_change"}}
+
+
+def _describe(ctx: Context, o) -> str:
+    a = o.attributes
+    bits = [o.action.replace("_", " ")]
+    for key, fmt in (("speed_kmh", "{:g} km/h"), ("signal_state", "light {}"), ("approach", "approach {}"),
+                     ("heading_change_deg", "heading change {:+g} deg")):
+        if a.get(key) is not None:
+            bits.append(fmt.format(a[key]))
+    if a.get("vehicles"):
+        bits.append("vehicles " + "+".join(map(str, a["vehicles"])))
+    return f"{o.id}: t={ctx.t_of(o):g} s, " + ", ".join(bits)
 
 
 def _summarise(ctx: Context, covered: set[str]) -> tuple[list[str], list[str]]:
     claims = [f"{o.id}: {o.raw_text}" for o in ctx.observations
               if o.source_type == SourceType.witness and o.raw_text and o.id not in covered]
-    record = [f"{o.id}: {ctx.t_of(o)}, {o.vehicle_id}, {o.action}, {json.dumps(o.attributes)}"
-              for o in ctx.timed(lambda o: o.source_type != SourceType.witness)]
-    return claims, record
+    record = ctx.timed(lambda o: o.source_type != SourceType.witness)
+    lines = []
+    for who in sorted({o.vehicle_id or "" for o in record}):
+        lines.append(f"[{who or 'scene / signals'}]")
+        lines += [_describe(ctx, o) for o in record if (o.vehicle_id or "") == who]
+    return claims, lines
+
+
+def _record_agrees(ctx: Context, witness_obs) -> bool:
+    """The record shows the same vehicle doing what the witness says: not a contradiction."""
+    same = _AGREES.get(witness_obs.action)
+    if not same or not witness_obs.vehicle_id and witness_obs.action != "collision":
+        return False
+    return any(o.source_type != SourceType.witness and o.action in same
+               and (witness_obs.action == "collision" or o.vehicle_id == witness_obs.vehicle_id)
+               for o in ctx.observations)
 
 
 def semantic_pass(ctx: Context, covered: set[str]) -> list[dict]:
@@ -52,7 +85,7 @@ def semantic_pass(ctx: Context, covered: set[str]) -> list[dict]:
         resp = httpx.post(
             f"{config.FEATHERLESS_BASE_URL.rstrip('/')}/chat/completions",
             headers={"Authorization": f"Bearer {config.FEATHERLESS_API_KEY}"},
-            json={"model": MODEL, "temperature": 0,
+            json={"model": MODEL, "temperature": 0, "max_tokens": 1500,
                   "messages": [{"role": "user", "content": PROMPT % ("\n".join(claims), "\n".join(record))}]},
             timeout=TIMEOUT_S,
         )
@@ -64,16 +97,22 @@ def semantic_pass(ctx: Context, covered: set[str]) -> list[dict]:
         log.warning("contradictions LLM pass skipped: %s: %s", type(e).__name__, e)
         return []
 
-    out = []
+    out, seen = [], set()
     for it in items if isinstance(items, list) else []:
         if not isinstance(it, dict):
             continue
         wid = it.get("witness_observation_id")
-        refs = [r for r in it.get("record_observation_ids") or [] if r in ctx.by_id]
-        if wid not in ctx.by_id or wid in covered or not it.get("title"):
-            continue  # drop hallucinated ids and anything the rules already flagged
-        sev = it.get("severity") if it.get("severity") in {s.value for s in Severity} else "low"
-        out.append({"type": ConflictType.semantic, "severity": Severity(sev), "title": str(it["title"])[:120],
-                    "description": str(it.get("description") or ""), "observation_ids": [wid] + refs,
-                    "t_range_s": ctx.window_of(ctx.by_id[wid]), "details": {"method": "llm_semantic", "model": MODEL}})
+        refs = [r for r in it.get("record_observation_ids") or []
+                if r in ctx.by_id and ctx.by_id[r].source_type != SourceType.witness]
+        if wid not in ctx.by_id or wid in covered or wid in seen or not refs or not it.get("title"):
+            continue  # hallucinated ids, no cited record, already flagged by a rule, or a repeat
+        if _record_agrees(ctx, ctx.by_id[wid]):
+            log.info("LLM conflict on %s dropped: the record agrees with the claim", wid)
+            continue
+        seen.add(wid)
+        # Unverified by a rule, so never "high": the investigator should check it.
+        out.append({"type": ConflictType.semantic, "severity": Severity.medium if len(refs) > 1 else Severity.low,
+                    "title": str(it["title"])[:120], "description": str(it.get("description") or ""),
+                    "observation_ids": [wid] + refs, "t_range_s": ctx.window_of(ctx.by_id[wid]),
+                    "details": {"method": "llm_semantic", "model": MODEL, "verified_by_rule": False}})
     return out

@@ -88,7 +88,7 @@
   },
   "properties": {
     "schema_version": {
-      "default": "1.0.2",
+      "default": "1.0.3",
       "title": "Schema Version",
       "type": "string"
     },

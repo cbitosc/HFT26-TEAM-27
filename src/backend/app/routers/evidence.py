@@ -1,6 +1,7 @@
 """Evidence upload, validation and storage (feeds modules 1–2)."""
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,7 +10,11 @@ import cv2
 from fastapi import APIRouter, HTTPException, Response, UploadFile
 
 from app import config, store
+from app.modules.extraction.sensor import inspect_csv
+from app.modules.ingestion.video import VideoError, probe_video
 from app.schemas import Evidence, SourceType
+
+MAX_TEXT_CHARS = 200_000
 
 router = APIRouter(prefix="/api/evidence", tags=["evidence"])
 
@@ -39,23 +44,67 @@ async def upload_evidence(file: UploadFile) -> Evidence:
     if len(data) > config.MAX_UPLOAD_BYTES:
         raise HTTPException(413, "File too large")
 
+    sha256 = hashlib.sha256(data).hexdigest()
+    if dup := next((e for e in store.list_evidence() if e.sha256 == sha256), None):
+        store.audit("evidence_rejected", filename=file.filename, sha256=sha256, reason=f"duplicate of {dup.id}")
+        raise HTTPException(409, f"Duplicate: identical to {dup.id} ({dup.filename}), uploaded {dup.uploaded_at:%Y-%m-%d %H:%M} UTC")
+
     evidence_id = f"ev_{uuid.uuid4().hex[:8]}"
     config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     dest = config.UPLOAD_DIR / f"{evidence_id}{Path(file.filename).suffix.lower()}"
     dest.write_bytes(data)
 
+    try:
+        details = _inspect(kind, dest, file.filename, data)
+    except ValueError as e:  # unusable file: say why now, not halfway through a run
+        dest.unlink(missing_ok=True)
+        store.audit("evidence_rejected", filename=file.filename, sha256=sha256, reason=str(e))
+        raise HTTPException(422, str(e))
+
     evidence = Evidence(
         id=evidence_id, kind=kind, filename=file.filename, content_type=file.content_type,
         size_bytes=len(data), stored_path=str(dest), uploaded_at=datetime.now(timezone.utc),
+        sha256=sha256, details=details,
     )
     store.add_evidence(evidence)
+    store.audit("evidence_uploaded", id=evidence_id, filename=file.filename, kind=kind.value,
+                size_bytes=len(data), sha256=sha256, details=details)
     return evidence
+
+
+def _inspect(kind: SourceType, path: Path, filename: str, data: bytes) -> dict:
+    """Check the file is usable for its kind; return what was learned. Raises ValueError."""
+    if kind == SourceType.video:
+        try:
+            info = probe_video(str(path))
+        except VideoError as e:
+            raise ValueError(f"{filename}: not a readable video ({e})") from e
+        return {"fps": round(info.fps, 3), "frames": info.frame_count, "duration_s": round(info.duration_s, 2),
+                "width": info.width, "height": info.height}
+    if kind == SourceType.sensor:
+        try:
+            return inspect_csv(str(path), filename)
+        except ValueError:
+            raise
+        except Exception as e:  # malformed CSV
+            raise ValueError(f"{filename}: could not be read as CSV ({type(e).__name__}: {e})") from e
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise ValueError(f"{filename}: witness statements must be UTF-8 text") from e
+    if not text.strip():
+        raise ValueError(f"{filename}: the statement is empty")
+    if len(text) > MAX_TEXT_CHARS:
+        raise ValueError(f"{filename}: statement longer than {MAX_TEXT_CHARS} characters")
+    return {"lines": len(text.splitlines()), "words": len(text.split())}
 
 
 @router.delete("/{evidence_id}", status_code=204)
 def delete_evidence(evidence_id: str) -> None:
+    ev = next((e for e in store.list_evidence() if e.id == evidence_id), None)
     if not store.delete_evidence(evidence_id):
         raise HTTPException(404, "Evidence not found")
+    store.audit("evidence_deleted", id=evidence_id, filename=ev.filename, sha256=ev.sha256)
 
 
 @router.get("/{evidence_id}/frames/{index}", response_class=Response,

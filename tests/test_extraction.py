@@ -228,7 +228,7 @@ def test_optical_flow_csv_emits_motion_spikes_in_time_order(tmp_path):
     out = extract_sensor(_write(tmp_path, "visual_motion_proxy.csv", header + "\n" + "\n".join(lines)))
     ObservationSet.model_validate(out.model_dump())
     spikes = [(o.id, o.t_rel_s, o.attributes["view"]) for o in out.observations]
-    assert spikes == [("sen_motion_001", 7.0, "view_2"), ("sen_motion_002", 20.0, "view_1")]
+    assert spikes == [("sen_motion_001", 7.0, 2), ("sen_motion_002", 20.0, 1)]
     assert all(o.action == "motion_spike" and o.vehicle_id is None and o.confidence <= 0.8 for o in out.observations)
     assert out.observations[1].source_ref.locator == "row:22"
     gap_warnings = [w for w in out.warnings if "no flow value" in w]

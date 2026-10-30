@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-SCHEMA_VERSION = "1.0.2"
+SCHEMA_VERSION = "1.0.3"
 
 
 # ---------------------------------------------------------------- evidence
@@ -33,6 +33,8 @@ class Evidence(BaseModel):
     size_bytes: int
     stored_path: str
     uploaded_at: datetime
+    sha256: str | None = Field(None, description="Content hash taken at upload (chain of custody)")
+    details: dict[str, Any] = Field(default_factory=dict, description="Upload-time inspection, e.g. video fps or CSV layout")
 
 
 # ------------------------------------------------- modules 1–2: observations
@@ -179,6 +181,14 @@ class StageResult(BaseModel):
     stage: str
     status: Literal["real", "fixture", "skipped", "error"]
     message: str = ""
+    duration_s: float | None = None
+
+
+class EvidenceRef(BaseModel):
+    """Which exact file a run used: the id plus its content hash."""
+    id: str
+    filename: str
+    sha256: str | None = None
 
 
 class AnalysisRun(BaseModel):
@@ -187,6 +197,41 @@ class AnalysisRun(BaseModel):
     finished_at: datetime
     evidence_count: int
     stages: list[StageResult]
+    evidence: list[EvidenceRef] = Field(default_factory=list, description="Manifest of the evidence analysed")
+
+
+class IncidentReport(BaseModel):
+    """Investigator-facing report of one run (GET /api/report)."""
+    run_id: str
+    incident_id: str
+    generated_at: datetime
+    headline: str
+    summary: str | None = Field(None, description="AI-drafted narrative, only when an LLM key is set")
+    facts: dict[str, Any]
+    markdown: str
+
+
+class IncidentInfo(BaseModel):
+    """Case details (GET/PUT /api/incident). reference_time is t = 0 for every module."""
+    incident_id: str
+    title: str = ""
+    location: str = ""
+    reference_time: datetime
+    reference_time_confirmed: bool = Field(description="False while the demo default is in use")
+
+
+class IncidentUpdate(BaseModel):
+    incident_id: str | None = Field(None, min_length=1, max_length=80)
+    title: str | None = Field(None, max_length=200)
+    location: str | None = Field(None, max_length=200)
+    reference_time: datetime | None = Field(None, description="ISO 8601 with a UTC offset")
+
+
+class AuditEvent(BaseModel):
+    """One line of the append-only audit log (storage/audit.jsonl)."""
+    at: datetime
+    event: str
+    data: dict[str, Any] = Field(default_factory=dict)
 
 
 class StageProgress(BaseModel):

@@ -53,6 +53,10 @@ Return ONLY a JSON object, no prose, with this shape:
 }}]}}
 Rules: one observation per distinct claim; do not invent facts; keep hedging words in raw_text;
 the evening is 17:00-19:00 (\"5:40 in the evening\" = 17:40, \"quarter to six\" = 17:45).
+Always extract, each as its own observation: every traffic-light colour mentioned (action "signal_state",
+attributes.signal_state, vehicle_description = whose light it was), every speed estimate, every clock time
+for the incident (action "collision" with clock_time), every vehicle description, including hedged ones.
+Only give a direction if the statement states it (e.g. "from the south" = northbound); never guess.
 Omit attribute keys you have no value for."""
 
 # hedge cue -> confidence ceiling it implies
@@ -174,6 +178,37 @@ def _clock_timestamp(clock: str | None) -> datetime | None:
     return datetime.combine(ref.date(), time(int(m.group(1)), int(m.group(2))), tzinfo=ref.tzinfo)
 
 
+CARDINAL_BOUND = {"north": "northbound", "south": "southbound", "east": "eastbound", "west": "westbound"}
+OPPOSITE = {"north": "southbound", "south": "northbound", "east": "westbound", "west": "eastbound"}
+BOUND_APPROACH = {"northbound": "NB", "southbound": "SB", "eastbound": "EB", "westbound": "WB"}
+
+
+def grounded_direction(quote: str) -> str | None:
+    """Direction of travel only if the quote itself states it ("from the south", "heading east", "northbound")."""
+    q = quote.lower()
+    if m := re.search(r"\b(north|south|east|west)bound\b", q):
+        return CARDINAL_BOUND[m.group(1)]
+    if m := re.search(r"\b(?:heading|going|driving|travell?ing)\s+(north|south|east|west)\b", q):
+        return CARDINAL_BOUND[m.group(1)]
+    if m := re.search(r"\bfrom the (north|south|east|west)\b", q):
+        return OPPOSITE[m.group(1)]
+    return None
+
+
+def infer_action(item: dict, attrs: dict) -> str | None:
+    """The LLM sometimes leaves `action` empty for timing or signal remarks; recover it from what it did fill in."""
+    action = str(item.get("action") or "").strip().lower().replace(" ", "_").replace("-", "_")
+    if action and action not in ("null", "none", "unknown"):
+        return action
+    if attrs.get("signal_state"):
+        return "signal_state"
+    if item.get("clock_time"):
+        return "collision"  # "the crash happened at about quarter to six"
+    if attrs.get("speed_kmh") is not None or item.get("vehicle_description"):
+        return "moving"
+    return None
+
+
 def _clean_attributes(attrs: dict | None) -> dict:
     out = {}
     for k, v in (attrs or {}).items():
@@ -213,7 +248,8 @@ def extract_witness(evidence: Evidence) -> ObservationSet:
     for i, item in enumerate(items):
         if not isinstance(item, dict):
             continue
-        action = str(item.get("action") or "").strip().lower().replace(" ", "_")
+        attrs = _clean_attributes(item.get("attributes"))
+        action = infer_action(item, attrs)
         try:
             hint = int(item.get("line")) if item.get("line") is not None else None
         except (TypeError, ValueError):
@@ -228,7 +264,14 @@ def extract_witness(evidence: Evidence) -> ObservationSet:
         vid = resolve_vehicle(desc)
         if desc and vid is None:
             warnings.append(f"{file} line {line}: vehicle '{desc}' could not be mapped unambiguously.")
-        attrs = _clean_attributes(item.get("attributes"))
+        # Directions must come from the words, not the model's guess ("from my left" says nothing).
+        llm_dir = attrs.pop("direction", None)
+        attrs.pop("approach", None)
+        if direction := grounded_direction(raw):
+            attrs["direction"] = direction
+            attrs["approach"] = BOUND_APPROACH[direction]
+        elif llm_dir:
+            warnings.append(f"{file} line {line}: direction '{llm_dir}' dropped (not stated in the quote).")
         ts = _clock_timestamp(item.get("clock_time"))
         uncertainty = 0.0
         if ts is not None:
@@ -244,6 +287,22 @@ def extract_witness(evidence: Evidence) -> ObservationSet:
         candidates.append({"i": i, "line": line, "raw": raw, "desc": desc, "vid": vid, "action": action,
                            "attrs": attrs, "ts": ts, "unc": uncertainty, "order": order,
                            "conf": _confidence(raw, item.get("certainty"))})
+
+    # A vehicle's direction stated once ("coming up Main Road from the south") applies to its other claims,
+    # e.g. "its light was green" is about that vehicle's approach.
+    known = {c["vid"]: c["attrs"]["approach"] for c in candidates if c["vid"] and c["attrs"].get("approach")}
+    for c in candidates:
+        if c["vid"] in known and "approach" not in c["attrs"]:
+            c["attrs"]["approach"] = known[c["vid"]]
+    # A collision in a statement that names both vehicles involves both.
+    involved = sorted({c["vid"] for c in candidates if c["vid"]})
+    for c in candidates:
+        both = c["action"] == "post_collision_slide" or re.search(r"\b(both|the two|each other)\b", c["raw"].lower())
+        if (c["action"] == "collision" or both) and len(involved) >= 2:
+            listed = [v for v in c["attrs"].get("vehicles", []) if isinstance(v, str)]
+            if len({v for v in listed if v in involved}) < 2:
+                c["attrs"]["vehicles"] = involved
+                c["vid"] = None  # a collision belongs to both, not one
 
     # Re-number the witness's ordering as 1..n, ties broken by position in the text.
     ordered = sorted((c for c in candidates if c["order"] is not None),

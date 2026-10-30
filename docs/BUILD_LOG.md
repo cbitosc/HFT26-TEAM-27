@@ -338,3 +338,57 @@ The 11-minute baseline was also inflated: stopping the backend lets in-flight re
 
 ### Tests
 `pytest` **100 passed** (+16): jobs and the run lock, keyframe selection, the vision cache and progress, the frame endpoint, camera-mode detection, fixed-mode filtering, signal gating, paired-image requests, truncated-JSON repair, the pixel static check, view from box. Frontend `npm run build` OK.
+
+## 2026-10-31 · Backend upgrade: live-verified extraction, fusion, chain of custody, run history, incident report, CLI
+
+Driven by running every LLM path live for the first time (witness extraction and the LLM conflict check had only ever run against mocks).
+
+### Witness extraction (`modules/extraction/witness.py`, `config.py`)
+Live problems found: the key claims were dropped (W1's "its light was green", both clock times, W2's "turned yellow"); directions were invented ("from the south" became southbound, "from my left" became northbound); collisions lost their vehicles.
+- Default model `Qwen/Qwen2.5-7B-Instruct` → **`Qwen/Qwen3-30B-A3B-Instruct-2507`**. Benchmarked on the 8 known claims of the demo statements: 7B 6/8, Qwen3-30B-A3B 8/8 (1 concurrency unit), Qwen2.5-72B 8/8 (77 s), DeepSeek-V3 8/8, Qwen3-Next-80B 8/8 (4 units)
+- `infer_action`: claims with an empty action are recovered from the fields the model did fill (clock time → incident time, signal colour → `signal_state`, speed/vehicle → `moving`) instead of being dropped
+- `grounded_direction`: a direction is kept only if the quote states it ("from the south" → northbound, "heading east", "eastbound"); model guesses are dropped with a warning. A direction stated once applies to that vehicle's other claims (so "its light was green" gets approach NB)
+- Collisions and "both cars…" claims in a statement naming both vehicles involve both
+- The prompt lists what must always be extracted (every light colour, speed, clock time, vehicle description)
+
+### Contradictions (`modules/contradictions/`)
+- LLM check (`llm.py`): the record is given per vehicle in plain time order; every conflict must cite record ids; a verdict the record itself contradicts is dropped (`_record_agrees`: e.g. "didn't brake" while telemetry shows braking); one conflict per claim; severity capped at medium and marked `verified_by_rule: false`. Before, it produced 5 high-severity conflicts, one factually wrong and two duplicates; now it adds none on the demo, which the rules already cover
+- Claims extracted from the same sentence as a rule-flagged claim are hidden from the LLM (no re-reporting)
+- `signal_states`: a witness light claim without an approach uses the vehicle's known approach
+- Default model also Qwen3-30B-A3B-2507
+- Live demo result: **exactly the 7 rule-based conflicts** (speed, green light, data gap, "sped up", 2 single-source signals, SUV/van)
+
+### Fusion — new stage 2c (`modules/fusion/`)
+- Infers a **collision** when two vehicles' sudden heading changes are within 1 s and 6 m. The impact is placed one sample before the change. The derived observation cites its sources (`fus_collision_001`, `attributes.inferred_from`)
+- Fixes the sensor-only gap: V1's and V2's telemetry are separate files, so no extractor saw the collision. That had also scattered witness clock times into extra "collisions" at −120 s and +180 s; they now attach to the one real collision
+- Skipped when a camera or sensor already reports a collision, and in demo mode
+
+### Chain of custody (`routers/evidence.py`, `store.py`, `pipeline.py`)
+- Upload records **SHA-256** and inspection `details` (video fps/frames/duration/size; CSV layout via the shared `sensor.classify_columns`; text lines/words)
+- **409** for a duplicate (same hash). **422** at upload for an undecodable video, an unknown CSV layout, or empty or non-UTF-8 text; the file is not kept
+- Runs re-hash every file into an **evidence manifest** (`AnalysisRun.evidence`) and audit any mismatch with the upload hash
+- **Append-only audit log** `storage/audit.jsonl` (uploads, rejections, deletions, incident changes, run start and finish) → `GET /api/audit`
+
+### Run history and timing
+- Every run is archived to `storage/runs/<run_id>/` (last 50 kept) → `GET /api/runs`, `GET /api/runs/{id}/{artifact}` (path traversal rejected)
+- `StageResult.duration_s` for every stage
+
+### Case details (`routers/incident.py`, `config.py`)
+- `GET/PUT /api/incident`: incident id, title, location, **reference time** (must have a UTC offset), saved in `storage/incident.json`
+- All modules read the reference time at call time (the timeline used to copy it at import)
+- Until a reference time is set, reports show "—" instead of wall-clock times. Before, any real case got the demo's 17:42 clock
+
+### Incident report (`report.py`) → `GET /api/report[?format=markdown&narrative=false]`, `GET /api/runs/{id}/report`
+Headline, evidence table with hashes, timeline (t and clock), contradictions with a **citation for every observation** (file @ line/row/frame + quote), evidence gaps and limitations (stages not run, missing-evidence conflicts, extractor warnings), reconstruction, chain of custody. With a key, a short **AI-drafted summary** from the same facts only (temperature 0, must attribute claims as the conflict descriptions do, dropped if it contains a time not in the facts), labelled "verify against the cited evidence". Sample: `docs/sample_report/`.
+
+### CLI — `scripts/analyze.py`
+`analyze.py <files…> [--out dir] [--no-narrative]`: same upload checks as the API, the full pipeline, then report.md/json and all artifacts in `reports/<run>/` (git-ignored). Uses isolated storage per invocation. Demo evidence: 16 s (witnesses run in parallel).
+
+### Other
+- Timeline labels: "Signal yellow (approach not stated)" instead of "Unknown signal yellow"
+- Motion spikes carry an integer camera `view`, matching video findings
+- Schema 1.0.2 → **1.0.3** (additive): `Evidence.sha256/details`, `StageResult.duration_s`, `AnalysisRun.evidence`, `EvidenceRef`, `IncidentInfo/IncidentUpdate`, `IncidentReport`, `AuditEvent`; JSON schemas re-exported
+- README: solution overview and quick start. CLAUDE.md, INTEGRATION_CONTRACT (API table) and HANDOFF_CONTRACT (fusion) updated
+
+### Tests
+`pytest` **107 passed** (+7): fusion (`test_fusion.py`); integrity, history, audit, report and incident (`test_integrity_and_history.py`); updated stage and upload expectations. Verified live: demo evidence via the CLI and the API, and your uploaded dataset via the running backend.
