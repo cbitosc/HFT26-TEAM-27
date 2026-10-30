@@ -133,3 +133,27 @@ Tests (`tests/`):
 
 - Created branch `feature/prototype` from `main` and committed everything above as one commit. Runtime `storage/`, `.venv/` and `node_modules/` are ignored
 - Next: one parallel session per module (1, 2, 3, 4, 5), each branching from `feature/prototype`
+
+## 2026-10-30 · Module 5: trajectory reconstruction (branch `claude/mod5-reconstruction-a604bb`)
+
+**Backend** (`src/backend/app/modules/reconstruction/`: `__init__.py`, new `builder.py`)
+- `build_reconstruction` is now real. The pipeline reports stage 5 as `real`
+- Keyframes: any observation with a time and numeric `x_m`/`y_m` (the most confident one per vehicle and instant). They are resampled to a 0.5 s grid on the predefined intersection (extent 60 m, 3.5 m lanes, Main Rd / 5th Ave)
+- Between keyframes whose speed and heading agree with the displacement, the vehicle holds speed and then brakes or accelerates uniformly to the next measured speed. This is exact for the scenario and bridges V1's 6.0–7.5 s gap at constant velocity. If that profile can't fit, it falls back to cubic Hermite, then to a straight line (e.g. across the collision impulse). Outside the keyframes a vehicle continues at constant velocity, or holds if stopped
+- Vehicles with no positions get an approach-direction default (from `direction`/`approach`/`heading_deg`): constant speed in their left-hand-traffic lane, reaching the conflict point at collision time
+- Collision marker only if a timeline `collision` event references known observations. It is placed at the vehicles' closest approach within the event's time ± uncertainty
+- Window: collision time −5 s to +3 s (5–13 s on the demo), else derived from the last keyframe
+- `source_observation_ids` lists only the measured keyframes, so the viewer can tell measured points from interpolated ones (no contract change)
+- On the fixtures, V1/V2 tracks match `scenario.py` to within 1 cm up to t=10 s. The marker sits at (-1.75, 1.75), t=10.0
+
+**Frontend** (`src/frontend/src/components/ReconstructionViewer.jsx`, same props)
+- Fetches `/api/observations` itself to find measured keyframe times and signal phases
+- Past path is solid between measured points and dashed where interpolated, with dots on measured points; the faint full planned path is also shown
+- Stop lines on the inbound lanes. Signal heads with the current state (sensor > video > witness, falling back to a lower source when the better one hasn't reported yet), plus a legend
+- Auto / Junction / Full zoom (auto follows the vehicles). Labels are laid out so they don't overlap: vehicle labels sit right of the car, the impact label left of the marker, with leader lines. The collision marker is drawn under the vehicles
+- Checked in headless Chrome against a live backend at t = 5, 8.5, 9.7, 10.0, 10.2, 12.5 s
+
+**Tests**
+- New `tests/test_reconstruction.py` (13 tests): window, monotonic 0.5 s tracks, V1/V2 within 1 m of (-1.75, 1.75) at t=10, match to ground truth through the sensor gap, collision marker present, no marker without a supported collision event, approach defaults without sensors, dense 0.5 s telematics with the gap, pipeline stage `real`
+- `tests/test_api.py`: the "all stages fixture" assertion now checks only the extractor stages (same change as mod3's branch, so the merge on that line is trivial)
+- `pytest`: 26 passed. `npm run build`: OK
