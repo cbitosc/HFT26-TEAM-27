@@ -43,7 +43,9 @@ LAT_COLS = ("lat", "latitude", "gps_lat")
 LON_COLS = ("lon", "lng", "long", "longitude", "gps_lon", "gps_lng")
 HEADING_COLS = ("heading_deg", "hdg", "heading")
 BRAKE_COLS = ("brake", "brake_pedal", "braking", "brake_on")
-VEHICLE_COLS = ("vehicle_id", "unit_id", "vehicle", "device_id")
+VEHICLE_COLS = ("vehicle_id", "unit_id", "vehicle", "device_id", "device", "unit", "tracker_id", "imei", "car_id")
+TIME_NAME = re.compile(r"(^|_)(time|times|ts|timestamp|epoch|date|datetime|stamp|unix|utc)($|_)")
+VEHICLE_NAME = re.compile(r"(^|_)(vehicle|unit|device|tracker|imei|car|truck|bus)(_?id|_?name|_?no)?$")
 APPROACH_COLS = ("approach", "phase", "direction")
 STATE_COLS = ("state", "signal_state", "signal", "color", "colour")
 FRAME_COLS = ("source_frame_approx", "source_frame", "frame", "frame_index", "frame_no", "frame_number")
@@ -62,6 +64,46 @@ FLOW_SPIKE_RATIO = 1.5    # ...and at least this multiple of the view's median
 
 def _pick(cols: list[str], names) -> str | None:
     return next((c for c in names if c in cols), None)
+
+
+def _time_kind(values: pd.Series, name: str) -> str | None:
+    """iso | ms | s | rel from the values themselves (names only break ties)."""
+    v = values.astype(str).str.strip()
+    v = v[v != ""].head(200)
+    if v.empty:
+        return None
+    nums = pd.to_numeric(v, errors="coerce")
+    if nums.notna().mean() >= 0.9:
+        med = float(nums.median())
+        if name.endswith("_ms") or med > 1e11:
+            return "ms"
+        if med > 1e8:
+            return "s"      # epoch seconds (after 1973)
+        return "rel"        # seconds from the start of the recording
+    if pd.to_datetime(v, format="ISO8601", errors="coerce", utc=True).notna().mean() >= 0.9:
+        return "iso"
+    return None
+
+
+def time_column(df: pd.DataFrame) -> tuple[str, str] | None:
+    """(column, kind) for the time column: known names first, then any time-like name whose values parse."""
+    cols = [c for c in df.columns if not c.startswith("_")]
+    ordered = [c for c in TIME_COLS if c in cols] + [c for c in cols if c not in TIME_COLS and TIME_NAME.search(c)]
+    for c in ordered:
+        found = _time_kind(df[c], c)
+        if found is None:
+            continue
+        if c in TIME_COLS:  # an explicit name ("epoch_s", "timestamp_ms") says what the numbers mean
+            declared = TIME_COLS[c]
+            return c, declared if (declared == "iso") == (found == "iso") else found
+        if "unix" in c or "epoch" in c:
+            return c, "ms" if found == "ms" or c.endswith("_ms") else "s"
+        return c, found
+    return None
+
+
+def vehicle_column(cols: list[str]) -> str | None:
+    return _pick(cols, VEHICLE_COLS) or next((c for c in cols if VEHICLE_NAME.search(c) and not TIME_NAME.search(c)), None)
 
 
 def _row_locator(a: int, b: int | None = None) -> str:
@@ -137,8 +179,8 @@ def _read(evidence: Evidence) -> tuple[pd.DataFrame, str]:
 
 
 def _with_time(df: pd.DataFrame, b: _Builder) -> pd.DataFrame:
-    tcol = _pick(list(df.columns), TIME_COLS)
-    df["_ts"] = _parse_times(df[tcol], TIME_COLS[tcol])
+    tcol, kind = time_column(df)
+    df["_ts"] = _parse_times(df[tcol], kind)
     bad = df["_ts"].isna()
     if bad.any():
         b.warnings.append(f"{b.file}: {int(bad.sum())} row(s) with unreadable '{tcol}' skipped "
@@ -413,7 +455,7 @@ def _extract_tracks(df: pd.DataFrame, b: _Builder) -> None:
     if picked["brake"]:
         df["_brake"] = df[picked["brake"]].str.strip().str.lower().isin(BRAKE_TRUE)
 
-    vcol = _pick(cols, VEHICLE_COLS)
+    vcol = vehicle_column(cols)
     groups = df.groupby(df[vcol].str.strip(), sort=False) if vcol else [("", df)]
     for raw_id, track in groups:
         if len(track) == 0:
@@ -452,9 +494,11 @@ LAYOUTS = {"signal_log": "traffic-signal log", "vehicle_track": "vehicle track (
            "optical_flow": "optical-flow motion per camera view", "frame_index": "video frame index"}
 
 
-def classify_columns(cols: list[str]) -> str | None:
-    """Which supported CSV layout these (lower-cased) headers are, or None."""
-    if _pick(cols, TIME_COLS) is None:
+def classify_columns(cols: list[str], df: pd.DataFrame | None = None) -> str | None:
+    """Which supported CSV layout these (lower-cased) headers are, or None. With the data, time columns
+    are also recognised by name pattern + values (e.g. 'ts_unix' holding epoch seconds)."""
+    has_time = (time_column(df) is not None) if df is not None else _pick(cols, TIME_COLS) is not None
+    if not has_time:
         return None
     if _pick(cols, APPROACH_COLS) and _pick(cols, STATE_COLS):
         return "signal_log"
@@ -479,7 +523,8 @@ def inspect_csv(path: str, filename: str) -> dict:
     cols = [str(c).strip().lower() for c in df.columns]
     if df.empty:
         raise ValueError(f"{filename}: no data rows")
-    layout = classify_columns(cols)
+    df.columns = cols
+    layout = classify_columns(cols, df)
     if layout is None:
         raise ValueError(unrecognised(filename, cols))
     return {"layout": layout, "layout_name": LAYOUTS[layout], "rows": len(df), "columns": cols}
@@ -490,7 +535,7 @@ def extract_sensor(evidence: Evidence) -> ObservationSet:
     df, file = _read(evidence)
     b = _Builder(evidence, file)
     cols = list(df.columns)
-    layout = classify_columns(cols)
+    layout = classify_columns(cols, df)
     if layout == "signal_log":
         _extract_signals(df, b)
     elif layout == "vehicle_track":
@@ -518,9 +563,9 @@ def scan_csv(path: str) -> dict:
     df.columns = [str(c).strip().lower() for c in df.columns]
     cols = list(df.columns)
     out: dict = {}
-    tcol = _pick(cols, TIME_COLS)
-    if tcol and TIME_COLS[tcol] != "rel":
-        kind = TIME_COLS[tcol]
+    found = time_column(df)
+    tcol, kind = found if found else (None, None)
+    if tcol and kind != "rel":
         if kind == "iso":
             ts = pd.to_datetime(df[tcol], format="ISO8601", utc=True, errors="coerce")
         else:

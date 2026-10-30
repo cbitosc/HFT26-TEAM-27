@@ -271,6 +271,7 @@ class Track:
 def track_vehicles(path: str, info: VideoInfo, views: list[tuple[int, int, int, int]],
                    warmup_s: float = 2.0, backgrounds: dict[int, np.ndarray] | None = None) -> list[Track]:
     """Moving-vehicle tracks per camera view: background subtraction + constant-velocity matching.
+    Each point is the blob's bottom centre (the road-contact point), in full-frame pixels.
 
     Only for fixed cameras. Stationary vehicles fade into the background model and are not tracked
     (verified stopped vehicles come from the vision model instead). Tracks are split where they
@@ -295,13 +296,16 @@ def track_vehicles(path: str, info: VideoInfo, views: list[tuple[int, int, int, 
                 if i < warmup:
                     continue
                 mask = cv2.threshold(mask, 200, 255, cv2.THRESH_BINARY)[1]  # 127 = shadow
-                mask = cv2.dilate(cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel), kernel, iterations=2)
-                n, _, stats, cent = cv2.connectedComponentsWithStats(mask)
+                opened = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+                mask = cv2.dilate(opened, kernel, iterations=2)  # joins a vehicle's fragments into one blob
+                n, lab, stats, cent = cv2.connectedComponentsWithStats(mask)
                 vh = y2 - y1
                 # Thresholds were tuned on 479x300 views; scale them so any resolution behaves the same.
                 area_k = (x2 - x1) * vh / (479 * 300)
                 # Skip the far field (top fifth) where vehicles merge; size floor grows towards the camera.
-                dets = [(cent[k][0] + x1, cent[k][1] + y1) for k in range(1, n)
+                # Position = bottom centre of the blob: where the vehicle meets the road. Calibration maps
+                # road-surface points to metres; the blob's centroid sits up on the body and reads too far away.
+                dets = [(cent[k][0] + x1, _contact_row(lab, opened, k, stats[k]) + y1) for k in range(1, n)
                         if cent[k][1] > 0.2 * vh and stats[k][4] >= area_k * (40 + 400 * (cent[k][1] / vh) ** 2)]
                 used: set[int] = set()
                 for tr in sorted(active[v], key=lambda tr: -len(tr["pts"])):
@@ -345,6 +349,14 @@ def track_vehicles(path: str, info: VideoInfo, views: list[tuple[int, int, int, 
     return out
 
 
+def _contact_row(lab: np.ndarray, opened: np.ndarray, k: int, stat) -> float:
+    """Lowest row of component k in the un-dilated mask (dilation would push the contact point down
+    by a few pixels, which reads as 'nearer' and biases speeds low)."""
+    x, y, w, h = int(stat[0]), int(stat[1]), int(stat[2]), int(stat[3])
+    rows = np.where(((lab[y:y + h, x:x + w] == k) & (opened[y:y + h, x:x + w] > 0)).any(axis=1))[0]
+    return float(y + rows.max()) if len(rows) else float(y + h)
+
+
 def _split_on_reversal(pts: list[tuple[float, float, float]]) -> list[list[tuple[float, float, float]]]:
     segs = [[pts[0]]]
     for a, b, c in zip(pts, pts[1:], pts[2:]):
@@ -364,11 +376,16 @@ def _plausible(seg: list[tuple[float, float, float]], min_move: float = 30.0) ->
     if len(seg) < 8 or seg[-1][0] - seg[0][0] < 1.5:
         return False
     net = float(np.hypot(seg[-1][1] - seg[0][1], seg[-1][2] - seg[0][2]))
-    path = sum(float(np.hypot(b[1] - a[1], b[2] - a[2])) for a, b in zip(seg, seg[1:]))
-    return net >= min_move and path > 0 and net / path >= 0.8
+    # Straightness on a smoothed path: per-frame pixel jitter would make slow vehicles look wiggly.
+    k = np.ones(5) / 5
+    xs = np.convolve([p[1] for p in seg], k, mode="valid")
+    ys = np.convolve([p[2] for p in seg], k, mode="valid")
+    path = float(np.sum(np.hypot(np.diff(xs), np.diff(ys))))
+    smooth_net = float(np.hypot(xs[-1] - xs[0], ys[-1] - ys[0]))
+    return net >= min_move and path > 0 and smooth_net / path >= 0.8
 
 
-def _smooth(seg: list[tuple[float, float, float]], every_s: float = 0.25) -> list[tuple[float, float, float]]:
+def _smooth(seg: list[tuple[float, float, float]], every_s: float = 0.1) -> list[tuple[float, float, float]]:
     """3-point moving average, then thinned to one point per `every_s` (always keeping the last)."""
     xs = np.convolve([p[1] for p in seg], np.ones(3) / 3, mode="same")
     ys = np.convolve([p[2] for p in seg], np.ones(3) / 3, mode="same")

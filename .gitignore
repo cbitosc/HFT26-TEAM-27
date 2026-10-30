@@ -18,3 +18,4 @@ dist/
 
 # CLI output (scripts/analyze.py)
 reports/
+eval/results.json

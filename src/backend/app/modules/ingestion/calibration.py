@@ -241,11 +241,12 @@ def from_dict(d: dict) -> ViewCalibration:
 
 def track_speeds(cal: ViewCalibration, points: list[list[float]], view_bottom: float):
     """(ground points [[t, X, Y]], per-point speed km/h or None, mean speed km/h or None) for one track."""
-    usable = [(t, x, y) for t, x, y in points if cal.usable(y, view_bottom)]
+    # Skip points at the view's bottom edge: the vehicle is cut off there, so its road contact is not visible.
+    usable = [(t, x, y) for t, x, y in points if cal.usable(y, view_bottom) and y < view_bottom - 3]
     mapped = [(t, cal.ground(x, y)) for t, x, y in usable]
     mapped = [(t, g) for t, g in mapped if g is not None]
     ground = [[round(t, 3), None if g[0] is None else round(g[0], 2), round(g[1], 2)] for t, g in mapped]
-    if len(mapped) < 4:
+    if len(mapped) < 3:
         return ground, {}, None
     ts = np.array([t for t, _ in mapped])
     if cal.method == "manual":

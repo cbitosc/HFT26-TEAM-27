@@ -1,0 +1,82 @@
+{
+  "about": "Signalised junction, side impact: V1 enters on late yellow, V2 jumps red.",
+  "collision": {
+    "t": 10.0,
+    "tol": 0.6,
+    "vehicles": [
+      "V1",
+      "V2"
+    ]
+  },
+  "events": [
+    {
+      "desc": "NB signal turns yellow",
+      "action": "signal_state",
+      "t": 7.0,
+      "tol": 0.3
+    },
+    {
+      "desc": "V1 brakes",
+      "action": "braking",
+      "vehicle": "V1",
+      "t": 9.0,
+      "tol": 0.7
+    },
+    {
+      "desc": "V2 brakes",
+      "action": "braking",
+      "vehicle": "V2",
+      "t": 9.6,
+      "tol": 0.7
+    },
+    {
+      "desc": "V1 enters junction",
+      "action": "entering_intersection",
+      "vehicle": "V1",
+      "t": 10.0,
+      "tol": 0.6
+    }
+  ],
+  "conflicts": [
+    {
+      "desc": "W1 overstates V2 speed",
+      "type": "numeric_mismatch",
+      "contains": [
+        "V2"
+      ],
+      "requires_llm": true
+    },
+    {
+      "desc": "W1 says V1 had green",
+      "type": "semantic",
+      "contains": [
+        "signal"
+      ],
+      "requires_llm": true
+    },
+    {
+      "desc": "W2 says V1 sped up",
+      "type": "semantic",
+      "contains": [
+        "accelerat"
+      ],
+      "requires_llm": true
+    },
+    {
+      "desc": "W1 says V2 never slowed",
+      "type": "semantic",
+      "contains": [
+        "V2"
+      ],
+      "requires_llm": true
+    },
+    {
+      "desc": "V1 telemetry gap",
+      "type": "missing_evidence",
+      "contains": [
+        "V1",
+        "dropout"
+      ]
+    }
+  ]
+}

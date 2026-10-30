@@ -1,0 +1,9 @@
+{
+  "incident_id": "CASE-CCTV-SPEEDS",
+  "title": "Motorway CCTV, three vehicles (synthetic)",
+  "lane_markings": "de_motorway",
+  "scene": {
+    "type": "road",
+    "traffic_side": "right"
+  }
+}

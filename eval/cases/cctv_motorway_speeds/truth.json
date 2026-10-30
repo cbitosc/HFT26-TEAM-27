@@ -1,0 +1,24 @@
+{
+  "about": "Fixed camera, de_motorway markings declared: calibrate and measure speeds.",
+  "collision": null,
+  "calibrated_views": [
+    1
+  ],
+  "speeds": [
+    {
+      "direction": "away from camera",
+      "kmh": 100,
+      "tol_pct": 15
+    },
+    {
+      "direction": "towards camera",
+      "kmh": 80,
+      "tol_pct": 15
+    },
+    {
+      "direction": "away from camera",
+      "kmh": 120,
+      "tol_pct": 15
+    }
+  ]
+}

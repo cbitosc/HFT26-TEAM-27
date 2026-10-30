@@ -1,0 +1,11 @@
+{
+  "incident_id": "CASE-DASH",
+  "title": "Dashcam car brakes to a stop (synthetic)",
+  "vehicles": [
+    {
+      "id": "D",
+      "description": "grey hatchback with the dashcam",
+      "ego": true
+    }
+  ]
+}

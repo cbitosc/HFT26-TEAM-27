@@ -53,7 +53,7 @@ def test_tracker_follows_moving_cars(tmp_path):
     by_view = {t.view: t for t in tracks}
     assert set(by_view) >= {1, 4}
     down = by_view[1].points
-    assert down[-1][2] - down[0][2] > 30 and abs(down[-1][1] - down[0][1]) < 6  # straight down
+    assert down[-1][2] - down[0][2] >= 25 and abs(down[-1][1] - down[0][1]) < 6  # straight down (to the view edge)
     across = by_view[4].points
     assert across[-1][1] - across[0][1] > 30  # left to right
 

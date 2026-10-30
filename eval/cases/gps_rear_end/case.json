@@ -1,0 +1,25 @@
+{
+  "incident_id": "CASE-GPS-REAR",
+  "title": "Rear-end collision, straight road (synthetic)",
+  "location": "Old Mumbai Hwy, Hyderabad",
+  "vehicles": [
+    {
+      "id": "A",
+      "description": "white hatchback",
+      "aliases": [
+        "GPS-11"
+      ]
+    },
+    {
+      "id": "B",
+      "description": "blue truck",
+      "aliases": [
+        "TRK-22"
+      ]
+    }
+  ],
+  "scene": {
+    "type": "road",
+    "traffic_side": "left"
+  }
+}

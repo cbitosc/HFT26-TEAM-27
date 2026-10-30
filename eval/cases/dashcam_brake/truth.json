@@ -1,0 +1,30 @@
+{
+  "about": "Dashcam ego motion; a witness claims the camera car never slowed down.",
+  "collision": null,
+  "events": [
+    {
+      "desc": "camera car brakes",
+      "action": "braking",
+      "vehicle": "D",
+      "t": 4.0,
+      "tol": 0.8
+    },
+    {
+      "desc": "camera car stops",
+      "action": "stopped",
+      "vehicle": "D",
+      "t": 6.5,
+      "tol": 0.8
+    }
+  ],
+  "conflicts": [
+    {
+      "desc": "witness: grey hatchback never slowed",
+      "type": "semantic",
+      "contains": [
+        "D"
+      ],
+      "requires_llm": true
+    }
+  ]
+}
