@@ -6,8 +6,10 @@ Viewer animates whatever this returns.
 """
 from app.schemas import ConflictReport, ObservationSet, Reconstruction, Timeline
 
+from .builder import reconstruct
+
 
 def build_reconstruction(
     observation_sets: list[ObservationSet], timeline: Timeline, conflicts: ConflictReport
 ) -> Reconstruction:
-    raise NotImplementedError("trajectory reconstruction not built yet")
+    return reconstruct(observation_sets, timeline, conflicts)
