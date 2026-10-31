@@ -610,4 +610,4 @@ Checked in the browser on the user's clip: the white-van event (box + zoom) and 
 
 ## 2026-10-31 · Larger text
 
-Root font size 16px → 17px (`index.css`), which scales all rem-based Tailwind text, spacing and controls together (~6%). The fixed 10px / 11px labels (`text-[10px]`, `text-[11px]`) became rem-based `0.7rem` / `0.75rem` so the smallest text scales too and is no longer below 12px. Frontend styling only; build OK.
+Root font size 16px → 18px (`index.css`), which scales all rem-based Tailwind text, spacing and controls together (~12%). The fixed 10px / 11px labels (`text-[10px]`, `text-[11px]`) became rem-based `0.7rem` / `0.75rem` so the smallest text scales too and is no longer below 12px. Frontend styling only; build OK.
