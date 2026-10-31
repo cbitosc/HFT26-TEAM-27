@@ -36,7 +36,7 @@ from .video import (MOVING_CAMERA_SHARE, Frame, Track, VideoInfo, camera_motion_
                     ego_motion, encode_jpeg_b64, extract_frames, probe_video, select_keyframes, static_regions,
                     track_vehicles, with_followers)
 from . import calibration
-from .linking import Sight, histogram, kind_of, link_sightings
+from .linking import Sight, histogram, kind_of, link_sightings, stationary_run
 from .road_geometry import estimate_vanishing_point, traffic_agrees
 from .vision import PROMPTS, CameraMode, FrameAnalysis, VisionClient, VisionError
 
@@ -142,7 +142,11 @@ def analyze_video(evidence: Evidence, client: VisionClient | None = None,
         tracks = track_vehicles(evidence.stored_path, info, views, backgrounds=backgrounds)
         report(0, 0, "calibrating cameras")
         cals = calibrate_views(evidence, views, backgrounds)
-        roads = estimate_roads(views, backgrounds, tracks, warnings)
+        try:  # an enhancement: whatever goes wrong here, the tracks themselves still stand
+            roads = estimate_roads(views, backgrounds, tracks, warnings)
+        except Exception as e:  # noqa: BLE001
+            roads = {}
+            warnings.append(f"Road direction could not be estimated ({type(e).__name__}: {e}); the schematic plan assumes a nominal camera.")
         track_obs = tracks_to_observations(evidence, info, tracks, views, cals, roads)
         warnings.append(f"{len(track_obs)} vehicle track(s) from motion in {len(views)} camera view(s) "
                         "(stationary vehicles are not tracked by motion).")
@@ -233,11 +237,16 @@ def analyze_video(evidence: Evidence, client: VisionClient | None = None,
     if mode == "dashcam":
         observations += box_tracks(evidence, info, analysed)
     elif mode == "fixed" and len(views) == 1 and len(track_obs) < FEW_MOTION_TRACKS:
-        boxed = box_tracks(evidence, info, raw, fixed=True, existing=track_obs, road=roads.get(1))
+        try:
+            boxed, stops = fixed_box_observations(evidence, info, raw, track_obs, roads.get(1), stops_known=observations)
+        except Exception as e:  # noqa: BLE001
+            boxed, stops = [], []
+            warnings.append(f"Linking the vision model's vehicle boxes failed ({type(e).__name__}: {e}); no AI-sighted tracks were added.")
         if boxed:
-            observations += boxed
+            observations += boxed + stops
             warnings.append(f"Motion tracking found only {len(track_obs)} vehicle(s), so {len(boxed)} more coarse track(s) "
-                            "were linked from the vision model's vehicle boxes (inferred; keyframes are seconds apart).")
+                            "were linked from the vision model's vehicle boxes (inferred; keyframes are seconds apart)"
+                            + (f"; {len(stops)} vehicle(s) that stayed at one place across keyframes are reported as stopped." if stops else "."))
     return ObservationSet(
         source_type=SourceType.video,
         evidence_id=evidence.id,
@@ -283,7 +292,7 @@ def box_tracks(evidence: Evidence, info: VideoInfo, analysed: list[tuple[Frame, 
     Dashcams: camera-relative (the camera itself moves), linked by the same-looking label alone.
     """
     if fixed:
-        return _fixed_box_tracks(evidence, info, analysed, existing or [], road)
+        return fixed_box_observations(evidence, info, analysed, existing or [], road)[0]
     tracks: list[dict] = []
     for frame, a in sorted(analysed, key=lambda fa: fa[0].t_s):
         for v in a.vehicles:
@@ -316,9 +325,14 @@ def box_tracks(evidence: Evidence, info: VideoInfo, analysed: list[tuple[Frame, 
     return out
 
 
-def _fixed_box_tracks(evidence: Evidence, info: VideoInfo, analysed: list[tuple[Frame, FrameAnalysis]],
-                      existing: list[Observation], road: dict | None) -> list[Observation]:
-    """One track per vehicle the model saw in at least two keyframes of a fixed camera (see linking.py)."""
+def fixed_box_observations(evidence: Evidence, info: VideoInfo, analysed: list[tuple[Frame, FrameAnalysis]],
+                           existing: list[Observation], road: dict | None,
+                           stops_known: list[Observation] | None = None) -> tuple[list[Observation], list[Observation]]:
+    """(tracks, stops) for a fixed camera from the vision model's boxes (see linking.py).
+
+    One track per vehicle seen in at least two keyframes. A vehicle that moved and then stayed at one place across
+    several keyframes also gives a "stopped" observation, with the keyframes that show it; vehicles that never moved
+    (parked) are not incident events, and a stop the pixel check already confirmed (`stops_known`) is not repeated."""
     frames = []
     for frame, a in sorted(analysed, key=lambda fa: fa[0].t_s):
         sights = []
@@ -337,12 +351,15 @@ def _fixed_box_tracks(evidence: Evidence, info: VideoInfo, analysed: list[tuple[
                    for t, x, y in pts)
         return bool(known) and near >= max(1, len(pts) / 2)
 
-    out = []
+    out, stops = [], []
     for tr in (t for t in link_sightings(frames, info.width, vp) if len(t.sights) >= 2):
         pts = [[round(s.t + T0_OFFSET_S, 3), round(s.contact[0], 1), round(s.contact[1], 1)] for s in tr.sights]
         if duplicate(pts):
             continue
         n = len(out) + 1
+        stop = stationary_run(tr, info.width)
+        if stop is not None and stop[0] > 0:  # it moved first: a stop is something that happened
+            stops.append(_stop_observation(evidence, info, tr, stop, len(stops) + 1, stops_known or [], f"U-B1-{n:03d}"))
         labels: dict[str, int] = {}
         for s in tr.sights:
             labels[s.label] = labels.get(s.label, 0) + 1
@@ -360,7 +377,39 @@ def _fixed_box_tracks(evidence: Evidence, info: VideoInfo, analysed: list[tuple[
                         "sightings": len(tr.sights), "source": "AI vehicle boxes linked across keyframes",
                         **({"direction": direction} if direction else {}), **(road or {})},
             confidence=round(min(0.45, 0.3 + 0.04 * len(tr.sights)), 2)))
-    return out
+    return out, [o for o in stops if o is not None]
+
+
+def _stop_observation(evidence: Evidence, info: VideoInfo, tr, run: tuple[int, int], n: int,
+                      known: list[Observation], vehicle_id: str) -> Observation | None:
+    i, j = run
+    first, last = tr.sights[i], tr.sights[j]
+    mid = tr.sights[(i + j) // 2]
+    cx, cy = mid.contact[0] / info.width * 1000, mid.contact[1] / info.height * 1000
+    t0, t1 = first.t + T0_OFFSET_S, last.t + T0_OFFSET_S
+    for o in known:  # the pixel check already confirmed this vehicle at this spot
+        b = o.attributes.get("box")
+        if (o.action == "stopped" and b and abs((b[0] + b[2]) / 2 - cx) <= 80 and abs(b[3] - cy) <= 80
+                and o.attributes.get("first_seen_s", o.t_rel_s or 0.0) <= t1 + 0.5 and o.attributes.get("last_seen_s", o.t_rel_s or 0.0) >= t0 - 0.5):
+            return None
+    box = [round(v, 1) for v in (mid.box[0] / info.width * 1000, mid.box[1] / info.height * 1000,
+                                 mid.box[2] / info.width * 1000, mid.box[3] / info.height * 1000)]
+    before = tr.sights[i - 1].t if i > 0 else first.t
+    count = j - i + 1
+    direction = next((s.direction for s in reversed(tr.sights) if s.direction), None)
+    return Observation(
+        id=f"vid_{evidence.id}_stop_{n:03d}", source_type=SourceType.video,
+        source_ref=SourceRef(evidence_id=evidence.id, file=evidence.filename, locator=f"frame:{first.index}"),
+        timestamp=config.INCIDENT_REFERENCE_TIME + timedelta(seconds=t0), t_rel_s=round(t0, 3),
+        # it stopped somewhere between the keyframe before and the first one that shows it standing
+        time_uncertainty_s=round(max(0.5, (first.t - before) / 2 if i > 0 else 0.5), 3),
+        vehicle_id=vehicle_id,  # the linked track's identity, so two white cars stay two vehicles on the timeline
+        vehicle_description=f"{tr.label} stopped", action="stopped",
+        attributes={"label": tr.label, "box": box, "frame_size": [info.width, info.height], "camera": "fixed", "view": 1,
+                    "seen_in_keyframes": count, "first_seen_s": round(t0, 2), "last_seen_s": round(t1, 2),
+                    "verified_by": f"at the same place in {count} keyframes over {last.t - first.t:.1f} s",
+                    **({"direction": direction} if direction else {})},
+        confidence=round(min(0.7, 0.4 + 0.05 * count), 2))
 
 
 def calibration_key(evidence: Evidence) -> str:

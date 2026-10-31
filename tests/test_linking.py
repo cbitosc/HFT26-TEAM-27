@@ -224,3 +224,88 @@ def test_benchmark_with_sideways_drift_and_a_wrong_road_direction():
     (_, _), (wp, wc) = _benchmark(0.0, (VP[0] + 900, VP[1] + 400))
     (_, _), (zp, zc) = _benchmark(0.0, None)
     assert wp >= zp - 0.06 and wc >= zc - 0.1
+
+
+# ---------------------------------------------------------------------------------------------- stops from tracks
+
+from app.modules.ingestion.linking import LinkedTrack, stationary_run  # noqa: E402
+
+
+def _track(points, size=120.0):
+    return LinkedTrack([sight(t, "white car", x, y, size) for t, x, y in points])
+
+
+def test_a_vehicle_that_stays_at_one_place_across_keyframes_is_stopped():
+    tr = _track([(0.0, 300, 500), (1.0, 500, 520), (2.0, 700, 540), (3.0, 702, 541), (4.0, 698, 542), (5.5, 701, 540)])
+    assert stationary_run(tr, W) == (2, 5)
+
+
+def test_a_moving_vehicle_has_no_stop():
+    assert stationary_run(_track([(float(i), 300 + 150 * i, 500 + 10 * i) for i in range(6)]), W) is None
+
+
+def test_a_vehicle_creeping_along_is_not_called_stopped():
+    assert stationary_run(_track([(float(i), 700 + 45 * i, 540) for i in range(6)]), W) is None   # 45 px/s against a 120 px vehicle
+
+
+def test_two_keyframes_or_a_short_span_are_not_enough():
+    assert stationary_run(_track([(0.0, 300, 500), (1.0, 700, 540), (2.0, 701, 540)]), W) is None
+    assert stationary_run(_track([(0.0, 300, 500), (1.0, 700, 540), (1.3, 701, 541), (1.6, 700, 540), (1.9, 702, 541)]), W) is None
+
+
+def _analysed(rows):
+    """rows: per keyframe, [(label, cx, bottom_y)] in 0-1000 units -> (evidence, info, analysed)."""
+    import json
+    from datetime import datetime, timezone
+    from app.modules.ingestion.video import Frame, VideoInfo
+    from app.modules.ingestion.vision import parse_frame_analysis
+    from app.schemas import Evidence
+
+    img = np.zeros((90, 160, 3), np.uint8)
+    frames = [Frame(index=round(t * 30), t_s=t, image=img) for t, _ in rows]
+    analysed = [(f, parse_frame_analysis(json.dumps({"vehicles": [
+        {"label": label, "box": [cx - 40, by - 70, cx + 40, by], "action": "moving", "direction": "away from camera, left lane", "confidence": 0.9}
+        for label, cx, by in sights]}))) for f, (_, sights) in zip(frames, rows)]
+    ev = Evidence(id="ev_v", kind="video", filename="v.mp4", size_bytes=1, stored_path="/dev/null", uploaded_at=datetime.now(timezone.utc))
+    return ev, VideoInfo(fps=30, frame_count=900, width=W, height=H), analysed
+
+
+def test_the_pipeline_reports_a_stop_with_the_keyframes_that_show_it():
+    from app.modules.ingestion import fixed_box_observations
+    rows = [(0.0, [("white car", 100, 500)]), (1.0, [("white car", 170, 510)]), (2.0, [("white sedan", 240, 520)]),
+            (3.0, [("white car", 300, 530)]), (4.2, [("white hatchback", 302, 531)]), (5.5, [("white car", 301, 530)])]
+    ev, info, analysed = _analysed(rows)
+    tracks, stops = fixed_box_observations(ev, info, analysed, [], None)
+    assert len(tracks) == 1 and len(stops) == 1
+    (stop,) = stops
+    assert stop.action == "stopped" and stop.vehicle_id == "U-B1-001" and stop.attributes["seen_in_keyframes"] == 3
+    assert stop.attributes["first_seen_s"] == 3.0 and stop.attributes["last_seen_s"] == 5.5
+    assert stop.attributes["box"] and stop.attributes["camera"] == "fixed" and "same place" in stop.attributes["verified_by"]
+    assert stop.time_uncertainty_s >= 0.5 and stop.confidence <= 0.7
+
+
+def test_a_vehicle_parked_throughout_is_not_an_incident_event():
+    from app.modules.ingestion import fixed_box_observations
+    rows = [(float(i), [("white car", 520 + (i % 2), 540)]) for i in range(6)]
+    ev, info, analysed = _analysed(rows)
+    tracks, stops = fixed_box_observations(ev, info, analysed, [], None)
+    assert len(tracks) == 1 and stops == []
+
+
+def test_a_stop_the_pixel_check_already_confirmed_is_not_repeated():
+    from app.modules.ingestion import fixed_box_observations
+    from app.schemas import Observation, SourceRef
+    rows = [(0.0, [("white car", 100, 500)]), (1.0, [("white car", 170, 510)]), (2.0, [("white car", 240, 520)]),
+            (3.0, [("white car", 300, 530)]), (4.2, [("white car", 302, 531)]), (5.5, [("white car", 301, 530)])]
+    ev, info, analysed = _analysed(rows)
+    known = Observation(id="k", source_type="video", source_ref=SourceRef(evidence_id="ev_v", file="v.mp4", locator="frame:90"), t_rel_s=3.0,
+                        action="stopped", confidence=0.8, attributes={"box": [260, 460, 340, 530], "camera": "fixed", "first_seen_s": 3.0, "last_seen_s": 5.5})
+    assert fixed_box_observations(ev, info, analysed, [], None, stops_known=[known])[1] == []
+    assert len(fixed_box_observations(ev, info, analysed, [], None, stops_known=[])[1]) == 1
+
+
+def test_a_pedestrian_is_not_a_vehicle_track():
+    from app.modules.ingestion import fixed_box_observations
+    rows = [(float(i), [("person", 300 + 20 * i, 600)]) for i in range(5)]
+    ev, info, analysed = _analysed(rows)
+    assert fixed_box_observations(ev, info, analysed, [], None) == ([], [])

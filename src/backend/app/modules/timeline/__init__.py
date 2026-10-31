@@ -471,6 +471,11 @@ class _Builder:
         who = " and ".join(vs) or (f"{first['label']}{where}" if first.get("label") else "Unidentified vehicle")
         if len(vs) == 1 and vs[0].startswith("U-") and first.get("label"):
             who = f"{first['label']}{where}"  # a provisional cross-source id reads worse than the description
+        elif len(vs) > 1 and all(x.startswith("U-") for x in vs):
+            # Several provisional vehicles (e.g. linked tracks on a fixed camera): name each by what was seen, not by id.
+            names = [next((o.attributes["label"] for o in members if o.vehicle_id == x and o.attributes.get("label")), None) for x in vs]
+            if all(names):
+                who = (" and ".join(names) if len(set(names)) == len(names) else f"{len(names)} {names[0]}s") + where
         if not vs and members[0].action == "hazard":
             what = str(first.get("hazard", "hazard")).replace("_", " ")
             return f"Hazard: {what}{where}"

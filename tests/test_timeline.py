@@ -123,3 +123,21 @@ def test_real_video_shapes_are_resolved(obs_sets):
     assert set(col.vehicle_ids) == {"V1", "V2"}
     # inputs untouched
     assert by_id["vid_002"].attributes["approach"] == "ego lane"
+
+
+def test_several_provisional_vehicles_are_named_by_what_was_seen_not_by_id():
+    from datetime import datetime, timezone
+    from app.modules.timeline import build_timeline
+    from app.schemas import Observation, ObservationSet, SourceRef
+
+    def obs(i, action, t, vid=None, label=None, **attrs):
+        return Observation(id=i, source_type="video", source_ref=SourceRef(evidence_id="ev_v", file="v.mp4", locator=f"frame:{int(t * 30)}"),
+                           t_rel_s=t, time_uncertainty_s=0.3, action=action, vehicle_id=vid, vehicle_description=label, confidence=0.7,
+                           attributes={"camera": "fixed", "view": 1, **({"label": label} if label else {}), **attrs})
+
+    sets = [ObservationSet(source_type="video", evidence_id="ev_v", producer="t", generated_at=datetime.now(timezone.utc), observations=[
+        obs("c", "collision", 4.8, vehicles=["white sedan"]),
+        obs("s1", "stopped", 5.0, "U-B1-001", "white sedan"), obs("s2", "stopped", 5.2, "U-B1-002", "dark SUV")])]
+    labels = [e.label for e in build_timeline(sets).events if e.category == "post_collision"]
+    assert labels == ["white sedan and dark SUV (camera view 1) come to rest after the collision"], labels
+    assert not any("U-B1" in label for label in labels)

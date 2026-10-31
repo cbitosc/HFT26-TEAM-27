@@ -241,3 +241,33 @@ def link_sightings(frames: list[tuple[float, list[Sight]]], frame_width: float,
             if j not in taken:
                 tracks.append(LinkedTrack([s]))
     return tracks
+
+
+STOP_MIN_SIGHTINGS = 3        # a stop needs the vehicle at the same place in at least this many keyframes ...
+STOP_MIN_SPAN_S = 1.5         # ... over at least this long
+STOP_RADIUS_SIZES = 0.25      # "the same place": within this share of the vehicle's size,
+STOP_MIN_RADIUS_FRACTION = 0.012  # ... and never tighter than this share of the frame width (box jitter)
+
+
+def stationary_run(track: LinkedTrack, frame_width: float) -> tuple[int, int] | None:
+    """Index range (first, last) of the longest stretch where the vehicle stayed in one place, or None.
+
+    This is a test independent of any pixel comparison: a vehicle whose box sits at the same spot in several keyframes
+    seconds apart is stopped, whatever else is moving in the picture. The model's own word for it ("stopped",
+    "moving") is not consulted."""
+    sights = track.sights
+    best: tuple[int, int] | None = None
+    for i in range(len(sights)):
+        j = i
+        while j + 1 < len(sights):
+            run = sights[i:j + 2]
+            cx = float(np.median([s.contact[0] for s in run]))
+            cy = float(np.median([s.contact[1] for s in run]))
+            radius = max(STOP_RADIUS_SIZES * float(np.median([s.size for s in run])), STOP_MIN_RADIUS_FRACTION * frame_width)
+            if max(math.hypot(s.contact[0] - cx, s.contact[1] - cy) for s in run) > radius:
+                break
+            j += 1
+        if (j - i + 1 >= STOP_MIN_SIGHTINGS and sights[j].t - sights[i].t >= STOP_MIN_SPAN_S
+                and (best is None or sights[j].t - sights[i].t > sights[best[1]].t - sights[best[0]].t)):
+            best = (i, j)
+    return best

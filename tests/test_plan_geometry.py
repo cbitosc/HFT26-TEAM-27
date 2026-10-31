@@ -157,3 +157,32 @@ def test_the_pipeline_attaches_the_road_direction_to_its_tracks(tmp_path, monkey
     assert math.hypot(vp[0] - truth[0], vp[1] - truth[1]) < 4.0
     assert tracks[0].attributes["road_geometry"]["distinct_lines"] >= 3
     assert any("road direction found" in w for w in obs.warnings)
+
+
+def test_a_failure_in_the_road_or_linking_enhancements_never_aborts_the_video_stage(tmp_path, monkeypatch):
+    from app import config
+    from app.modules import ingestion
+    from app.modules.ingestion import analyze_video
+    from app.schemas import Evidence, SourceType
+
+    def boom(*a, **k):
+        raise RuntimeError("simulated failure")
+
+    monkeypatch.setattr(config, "FEATHERLESS_API_KEY", "")
+    monkeypatch.setattr(ingestion, "CAMERA_MODE", "fixed")
+    monkeypatch.setattr(ingestion, "estimate_vanishing_point", boom)
+    veh = [{"lane_x": -1.875, "z0": 22.0, "speed_ms": 9.0, "color": (40, 40, 200)},
+           {"lane_x": 1.875, "z0": 90.0, "speed_ms": -12.0, "color": (200, 120, 40)}]
+    path = render_cctv_pose(tmp_path / "p.avi", veh, 12.0, w=W, h=H, focal=FOCAL, cam_height=9.0, pitch_deg=22.0, yaw_deg=-20.0)
+    ev = Evidence(id="ev_p", kind=SourceType.video, filename="p.avi", size_bytes=1, stored_path=str(path),
+                  uploaded_at=datetime.now(timezone.utc))
+    obs = analyze_video(ev)
+    assert [o for o in obs.observations if o.action == "track"]                      # the motion tracks still stand
+    assert any("could not be estimated" in w for w in obs.warnings)
+    assert not any("vanishing_point_px" in o.attributes for o in obs.observations)   # and no road direction is claimed
+
+
+def test_tiny_or_degenerate_views_do_not_raise():
+    for shape in ((10, 10, 3), (63, 400, 3), (400, 63, 3)):
+        vp, why = estimate_vanishing_point(np.zeros(shape, np.uint8))
+        assert vp is None and why

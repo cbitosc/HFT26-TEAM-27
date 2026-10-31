@@ -67,6 +67,8 @@ def plan_shape_error(plan_truth: dict, out: dict):
     obs = {o["id"]: o for o in out["observations"]}
     truth, plan = [], []
     for v in out["reconstruction"]["vehicles"]:
+        if not v["vehicle_id"].startswith("T"):
+            continue  # only measured motion tracks test the geometry; AI-sighted (B...) tracks are coarse boxes
         src = obs.get(v["source_observation_ids"][0]) if v["source_observation_ids"] else None
         if not src or len(src["attributes"].get("points", [])) != len(v["track"]):
             continue
@@ -146,7 +148,8 @@ def score(truth: dict, out: dict, llm: bool) -> list[dict]:
             if want.get("max_path_angle_deg"):  # every synthetic vehicle drives along its lane: its path must run along the plan's y axis
                 import math
                 angles = [math.degrees(math.atan2(abs(v["track"][-1]["x_m"] - v["track"][0]["x_m"]),
-                                                  abs(v["track"][-1]["y_m"] - v["track"][0]["y_m"]))) for v in rec["vehicles"]]
+                                                  abs(v["track"][-1]["y_m"] - v["track"][0]["y_m"])))
+                          for v in rec["vehicles"] if v["vehicle_id"].startswith("T")]  # motion tracks only (see plan_shape_error)
                 add("reconstruction", f"vehicle paths run along the road axis (within {want['max_path_angle_deg']:g} degrees)",
                     bool(angles) and max(angles) <= want["max_path_angle_deg"], ", ".join(f"{a:.1f}" for a in angles) + " degrees off")
             if want.get("plan_error_max_pct") and truth.get("plan_truth"):

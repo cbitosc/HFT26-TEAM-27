@@ -59,8 +59,12 @@ def _segments(gray: np.ndarray) -> np.ndarray:
 
 def estimate_vanishing_point(image: np.ndarray) -> tuple[VanishingPoint | None, str]:
     """The road's vanishing point in `image` (a vehicle-free background), or (None, why not)."""
+    if not hasattr(cv2, "createLineSegmentDetector"):
+        return None, "this OpenCV build has no line-segment detector"
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
     h, w = gray.shape[:2]
+    if min(h, w) < 64:
+        return None, "the view is too small to find road lines in"
     seg = _segments(gray)
     if len(seg) < MIN_SEGMENTS:
         return None, f"too few lane lines or rails in the picture ({len(seg)} long straight segments)"
