@@ -733,3 +733,10 @@ Why: on the night clip the timeline had two events. The pixel-patch check that c
 - **Evaluation scorer fix**: with an AI key on, the vision model also "sees" the synthetic vehicles and the plan gains coarse AI-box tracks; the new geometry checks judged those too (46% error) although the geometry was fine (3.9%). They now judge measured motion tracks only. Found by running the full AI-backed evaluation, not only the offline one.
 
 Tests: `tests/test_linking.py` +8 (stop detection, parked/creeping vehicles, duplicate suppression, pedestrian), `tests/test_timeline.py` +1, `tests/test_plan_geometry.py` +2 (failure injection, degenerate views). `pytest` 205 passed; evaluation 32/32 offline, 39/39 with the AI-backed cases.
+
+## 2026-10-31 · Accuracy and reconstruction pass 4: readable plan, wording
+
+- AI-sighted tracks are named and coloured each in the schematic plan and the footage view (`B1-004 · white car`, a distinct colour per vehicle); motion-tracked scenes keep one colour per camera view (a 58-track plan must not turn into a rainbow). The plan's map label uses the readable name. `camera.py`: `AI_COLORS`, `_name`.
+- "Collision involving white sedan" when the AI named only one vehicle ("between" needs two); unchanged for two or more.
+- Contract and hand-off notes updated for the road direction, linked tracks and stops from tracks.
+Tests: +1 (`test_plan_geometry.py`: names and colours). `pytest` 206 passed; evaluation 32/32 offline.

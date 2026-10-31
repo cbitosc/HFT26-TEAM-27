@@ -244,7 +244,7 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
   const labels = layoutLabels([
     ...current.map(({ v, p }) => ({
       key: v.vehicle_id, x: p.x_m, y: -p.y_m, color: 'var(--color-slate-900)',
-      text: `${v.vehicle_id}${p.speed_kmh != null ? ` · ${p.speed_kmh.toFixed(0)} km/h` : ''}${p.confidence != null ? ` · ${Math.round(p.confidence * 100)}%` : ''}${selected === v.vehicle_id ? (obsPoint(v.vehicle_id, p) ? ' · observed' : ' · inferred') : ''}`,
+      text: `${schematic ? v.label : v.vehicle_id}${p.speed_kmh != null ? ` · ${p.speed_kmh.toFixed(0)} km/h` : ''}${p.confidence != null ? ` · ${Math.round(p.confidence * 100)}%` : ''}${selected === v.vehicle_id ? (obsPoint(v.vehicle_id, p) ? ' · observed' : ' · inferred') : ''}`,
     })),
     ...(showCollision ? [{ key: 'collision', x: data.collision.x_m, y: -data.collision.y_m + 2 * fs, color: 'var(--color-red-700)', side: 'left',
       text: `inferred impact t=${data.collision.t_s.toFixed(1)}s · ${Math.round(data.collision.confidence * 100)}%` }] : []),

@@ -186,3 +186,22 @@ def test_tiny_or_degenerate_views_do_not_raise():
     for shape in ((10, 10, 3), (63, 400, 3), (400, 63, 3)):
         vp, why = estimate_vanishing_point(np.zeros(shape, np.uint8))
         assert vp is None and why
+
+
+def test_ai_sighted_tracks_are_named_and_coloured_each_and_motion_tracks_keep_their_view_colour():
+    from app.modules.reconstruction.camera import AI_COLORS, VIEW_COLORS, reconstruct_schematic_from_camera
+    from app.modules.timeline import build_timeline
+    from app.schemas import ObservationSet
+
+    def track(i, label=None, x0=100):
+        o = _observation([[2.0 + 0.5 * k, x0 + 20 * k, 100.0 + 25 * k] for k in range(6)])
+        o = o.model_copy(update={"id": f"vid_t{i}", "attributes": {**o.attributes, "track_id": f"{'B' if label else 'T'}1-00{i}",
+                                                                      **({"label": label, "source": "AI vehicle boxes"} if label else {})}})
+        return o
+    sets = [ObservationSet(source_type="video", evidence_id="ev_v", producer="t", generated_at=datetime.now(timezone.utc),
+                           observations=[track(1, "white van"), track(2, "dark SUV", 300), track(3)])]
+    rec = reconstruct_schematic_from_camera(sets, build_timeline(sets))
+    by = {v.vehicle_id: v for v in rec.vehicles}
+    assert by["B1-001"].label == "B1-001 · white van" and by["B1-002"].label == "B1-002 · dark SUV"
+    assert by["B1-001"].color != by["B1-002"].color and {by["B1-001"].color, by["B1-002"].color} <= set(AI_COLORS)
+    assert by["T1-003"].label == "T1-003" and by["T1-003"].color == VIEW_COLORS[0]

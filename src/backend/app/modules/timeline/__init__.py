@@ -489,7 +489,8 @@ class _Builder:
             return f"{APPROACH_NAMES.get(approach, approach)} signal {state or 'unknown'}"
         if c.family == "collision":
             side = next((a["impact_side"] for a in attrs if a.get("impact_side")), None)
-            return f"Collision between {who}" + (f" ({side})" if side else "")
+            # "between" needs two parties: an AI-reported collision may name only one vehicle
+            return (f"Collision between {who}" if " and " in who or len(vs) > 1 else f"Collision involving {who}") + (f" ({side})" if side else "")
         if c.family == "post_collision":
             return f"{who} come to rest after the collision" if len(vs) > 1 else f"{who} comes to rest after the collision"
 

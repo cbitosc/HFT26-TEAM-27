@@ -15,6 +15,19 @@ from app.schemas import CameraImage, Observation, ObservationSet, Reconstruction
 
 VIEW_COLORS = ["#0ea5e9", "#22c55e", "#f59e0b", "#a855f7", "#14b8a6", "#ec4899"]
 STOPPED_COLOR = "#dc2626"
+# AI-sighted vehicles are few and each has an identity worth telling apart: one colour each (dense motion-tracked
+# scenes keep one colour per camera view instead).
+AI_COLORS = ["#0ea5e9", "#f97316", "#22c55e", "#a855f7", "#eab308", "#ec4899", "#14b8a6", "#ef4444", "#6366f1", "#84cc16"]
+
+
+def _is_ai(o: Observation) -> bool:
+    return bool(o.attributes.get("source"))
+
+
+def _name(o: Observation, view) -> str:
+    """Track id, plus what the model called the vehicle for an AI-sighted track, else the camera view."""
+    tid = o.attributes["track_id"]
+    return f"{tid} · {o.attributes['label']}" if _is_ai(o) and o.attributes.get("label") else f"{tid} · view {view}"
 
 
 def _heading(dx: float, dy: float) -> float:
@@ -51,6 +64,7 @@ def reconstruct_from_camera(observation_sets: list[ObservationSet], timeline: Ti
         {tuple(o.attributes["view_box"]) for o in tracks if o.attributes.get("view_box")}, key=lambda b: (b[1], b[0]))
 
     vehicles: list[VehicleTrack] = []
+    n_ai = 0
     for o in tracks:
         pts = o.attributes["points"]
         speeds = {round(t, 3): s for t, s in o.attributes.get("speed_points", [])}
@@ -63,9 +77,11 @@ def reconstruct_from_camera(observation_sets: list[ObservationSet], timeline: Ti
         mean = o.attributes.get("mean_speed_kmh")
         speed = f"~{mean:g} km/h ({o.attributes.get('calibration', '').replace('_', ' ')} calibration)" if mean else \
             f"~{o.attributes.get('mean_speed_px_s', '?')} px/s (view not calibrated)"
+        if _is_ai(o):
+            n_ai += 1
         vehicles.append(VehicleTrack(
-            vehicle_id=o.attributes["track_id"], label=f"{o.attributes['track_id']} · view {view}",
-            color=VIEW_COLORS[(view - 1) % len(VIEW_COLORS)],
+            vehicle_id=o.attributes["track_id"], label=_name(o, view),
+            color=AI_COLORS[(n_ai - 1) % len(AI_COLORS)] if _is_ai(o) else VIEW_COLORS[(view - 1) % len(VIEW_COLORS)],
             description=(f"AI-sighted vehicle, {o.attributes.get('direction', '')}; coarse, from the model's boxes" if o.attributes.get("source")
                          else f"moving, {o.attributes.get('direction', '')}, {speed}"),
             track=track, source_observation_ids=[o.id]))
@@ -193,7 +209,9 @@ def reconstruct_schematic_from_camera(observation_sets: list[ObservationSet], ti
         return (x - xc) * depth / focal, depth
 
     vehicles = []
+    n_ai = 0
     for o in sorted(chosen, key=lambda o: o.attributes["points"][0][0]):
+        n_ai += _is_ai(o)
         pts = [(t, *ground(x, y)) for t, x, y in o.attributes["points"]]
         track = []
         for k, (t, gx, gy) in enumerate(pts):
@@ -202,8 +220,8 @@ def reconstruct_schematic_from_camera(observation_sets: list[ObservationSet], ti
                                     heading_deg=round(math.degrees(math.atan2(b[1] - a[1], b[2] - a[2])) % 360, 1),
                                     source="estimated", confidence=0.25))
         vehicles.append(VehicleTrack(
-            vehicle_id=o.attributes["track_id"], label=o.attributes["track_id"],
-            color=VIEW_COLORS[(view - 1) % len(VIEW_COLORS)],
+            vehicle_id=o.attributes["track_id"], label=_name(o, view) if _is_ai(o) else o.attributes["track_id"],
+            color=AI_COLORS[(n_ai - 1) % len(AI_COLORS)] if _is_ai(o) else VIEW_COLORS[(view - 1) % len(VIEW_COLORS)],
             description=(f"AI-sighted vehicle, {o.attributes.get('direction', '')}; schematic position from camera view {view}" if o.attributes.get("source")
                          else f"moving {o.attributes.get('direction', '')}; schematic position from camera view {view}"),
             track=track, source_observation_ids=[o.id]))
