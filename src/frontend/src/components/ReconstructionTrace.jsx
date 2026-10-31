@@ -7,6 +7,8 @@ const SOURCE_LABELS = {
   extrapolated: 'extrapolated beyond samples',
   estimated: 'estimated (no positional evidence)',
 }
+// Observed: read from a sensor sample or tracked in video. Everything else is an inference.
+export const isObservedSource = (src) => src === 'measured' || src === 'tracked'
 const pct = (c) => (c == null ? '—' : `${Math.round(c * 100)}%`)
 
 // Mean confidence and point-source mix of one or more tracks.
@@ -21,7 +23,8 @@ export function trackStats(vehicles) {
     }
   }
   const total = Object.values(counts).reduce((a, b) => a + b, 0)
-  return { counts, total, mean: n ? sum / n : null }
+  const observed = (counts.measured ?? 0) + (counts.tracked ?? 0)
+  return { counts, total, mean: n ? sum / n : null, observed: total ? observed / total : 0 }
 }
 
 function ConfidenceBar({ value }) {
@@ -30,6 +33,74 @@ function ConfidenceBar({ value }) {
   return (
     <div className="h-1.5 w-full rounded bg-slate-100" title={`confidence ${pct(value)}`}>
       <div className={`h-1.5 rounded ${color}`} style={{ width: `${c * 100}%` }} />
+    </div>
+  )
+}
+
+// Share of observed vs inferred points: the split the problem statement asks to keep visible.
+function ObservedInferred({ stats }) {
+  const o = Math.round(stats.observed * 100)
+  return (
+    <div>
+      <div className="flex h-2 overflow-hidden rounded bg-slate-100" title={`${o}% observed, ${100 - o}% inferred`}>
+        <div className="bg-emerald-500" style={{ width: `${o}%` }} />
+        <div className="bg-violet-400 opacity-70" style={{ width: `${100 - o}%`, backgroundImage: 'repeating-linear-gradient(45deg,transparent 0 3px,rgba(255,255,255,.55) 3px 5px)' }} />
+      </div>
+      <div className="mt-1 flex justify-between text-[0.75rem]">
+        <span className="text-emerald-700">{o}% observed</span>
+        <span className="text-violet-700">{100 - o}% inferred</span>
+      </div>
+    </div>
+  )
+}
+
+// When, along the replay window, one vehicle's position is observed vs inferred.
+function EvidenceStrip({ vehicle, data, time }) {
+  const span = data.t_max_s - data.t_min_s || 1
+  const pos = (t) => ((t - data.t_min_s) / span) * 100
+  const runs = []
+  const tr = vehicle.track
+  for (let i = 0; i < tr.length; i++) {
+    const obs = isObservedSource(tr[i].source ?? 'estimated')
+    const end = i + 1 < tr.length ? tr[i + 1].t_s : tr[i].t_s
+    const last = runs.at(-1)
+    if (last && last.obs === obs) last.end = end
+    else runs.push({ obs, start: tr[i].t_s, end })
+  }
+  return (
+    <div>
+      <div className="relative h-3 overflow-hidden rounded bg-slate-100">
+        {runs.map((r, i) => (
+          <div key={i} className="absolute top-0 h-3" title={`${r.obs ? 'observed' : 'inferred'} t=${r.start.toFixed(1)}–${r.end.toFixed(1)}s`}
+            style={{ left: `${pos(r.start)}%`, width: `max(2px, ${pos(r.end) - pos(r.start)}%)`, background: r.obs ? 'var(--color-emerald-500)' : 'var(--color-violet-500)',
+              opacity: r.obs ? 1 : 0.55, backgroundImage: r.obs ? undefined : 'repeating-linear-gradient(45deg,transparent 0 3px,rgba(255,255,255,.55) 3px 5px)' }} />
+        ))}
+        <div className="absolute inset-y-0 w-px bg-red-500" style={{ left: `${Math.min(100, Math.max(0, pos(time)))}%` }} />
+      </div>
+      <div className="mt-0.5 flex justify-between text-[0.7rem] text-slate-400"><span>{data.t_min_s.toFixed(0)}s</span><span>{data.t_max_s.toFixed(0)}s</span></div>
+    </div>
+  )
+}
+
+function EvidenceGroups({ ids, observationsById }) {
+  const known = ids.slice(0, 8)
+  const observed = known.filter((id) => ['measured', 'derived'].includes(observationsById[id]?.basis))
+  const rest = known.filter((id) => !observed.includes(id))
+  return (
+    <div className="space-y-2">
+      {observed.length > 0 && (
+        <div>
+          <h5 className="mb-1 font-medium text-emerald-700">Observed <span className="font-normal text-slate-400">· measured or computed by fixed rules</span></h5>
+          <ObservationList ids={observed} observationsById={observationsById} />
+        </div>
+      )}
+      {rest.length > 0 && (
+        <div>
+          <h5 className="mb-1 font-medium text-violet-700">Inferred or reported <span className="font-normal text-slate-400">· an AI reading or a statement</span></h5>
+          <ObservationList ids={rest} observationsById={observationsById} />
+        </div>
+      )}
+      {ids.length > 8 && <p className="text-slate-400">+{ids.length - 8} more in the positions export</p>}
     </div>
   )
 }
@@ -63,6 +134,8 @@ export default function ReconstructionTrace({ data, time, selected, onSelect, po
           <span className="font-mono font-semibold">{pct(all.mean)}</span>
         </div>
         <ConfidenceBar value={all.mean} />
+        <h4 className="mb-1 mt-3 font-medium text-slate-600">Observed vs inferred</h4>
+        <ObservedInferred stats={all} />
         <div className="mt-2"><SourceMix stats={all} /></div>
         <p className="mt-2 text-[0.75rem] leading-snug text-slate-500">
           {schematic
@@ -70,6 +143,14 @@ export default function ReconstructionTrace({ data, time, selected, onSelect, po
             : 'Solid line = positions at real samples; dashed = filled in between. A map is a reconstruction of what may have happened, not a legal finding.'}
         </p>
       </section>
+
+      {data.collision && (
+        <section className="rounded border border-red-300 p-2.5">
+          <h3 className="mb-1 font-semibold text-red-700">Inferred collision <span className="font-normal text-slate-400">· t={data.collision.t_s}s · conf {pct(data.collision.confidence)}</span></h3>
+          <p className="mb-1.5 text-[0.75rem] text-slate-500">Not observed directly. Placed where the tracks come closest, supported by:</p>
+          <ObservationList ids={data.collision.supporting_observation_ids.slice(0, 4)} observationsById={observationsById} />
+        </section>
+      )}
 
       <section className="rounded border border-slate-200 p-2.5">
         <h3 className="mb-1 font-semibold text-slate-700">Trace a vehicle</h3>
@@ -94,15 +175,15 @@ export default function ReconstructionTrace({ data, time, selected, onSelect, po
               <dd className="font-mono">{pct(one.mean)}</dd>
             </dl>
             <ConfidenceBar value={one.mean} />
+            <h4 className="font-medium text-slate-600">Observed vs inferred</h4>
+            <ObservedInferred stats={one} />
+            <EvidenceStrip vehicle={vehicle} data={data} time={time} />
             <SourceMix stats={one} />
             <div>
               <h4 className="mb-1 font-medium text-slate-600">Supporting evidence</h4>
               {vehicle.source_observation_ids.length
-                ? <ObservationList ids={vehicle.source_observation_ids.slice(0, 5)} observationsById={observationsById} />
+                ? <EvidenceGroups ids={vehicle.source_observation_ids} observationsById={observationsById} />
                 : <p className="text-slate-400">No observation ids recorded for this track.</p>}
-              {vehicle.source_observation_ids.length > 5 && (
-                <p className="mt-1 text-slate-400">+{vehicle.source_observation_ids.length - 5} more in the positions export</p>
-              )}
             </div>
           </div>
         )}

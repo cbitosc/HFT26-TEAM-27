@@ -611,3 +611,12 @@ Checked in the browser on the user's clip: the white-van event (box + zoom) and 
 ## 2026-10-31 · Larger text
 
 Root font size 16px → 18px (`index.css`), which scales all rem-based Tailwind text, spacing and controls together (~12%). The fixed 10px / 11px labels (`text-[10px]`, `text-[11px]`) became rem-based `0.7rem` / `0.75rem` so the smallest text scales too and is no longer below 12px. Frontend styling only; build OK.
+
+## 2026-10-31 · Reconstruction: observed vs inferred shown properly
+
+Requirement 5 (distinguish observations from inferences) was only partly visible in the Reconstruction. Rule used everywhere on the map and panel: **observed** = a track point read from a sensor sample (`measured`) or tracked in video (`tracked`); **inferred** = anything filled in (`interpolated`, `extrapolated`, `estimated`). Frontend only; uses the existing `TrackPoint.source`.
+- **Map:** observed = solid line, filled dot, solid vehicle; inferred = dashed line, hollow dot (selected vehicle), faded dashed-outline vehicle. The impact marker is a dashed ring labelled "inferred impact" (also on the slider). Selecting a vehicle adds "· observed/inferred" to its label. Segment style now follows the point's own source, not the keyframe lookup.
+- **Legend** under the map defines observed / inferred / inferred collision, with what each means and how the collision was placed ("where the tracks come closest; not witnessed or recorded").
+- **Trace panel:** observed-vs-inferred bar for the whole map and for the selected vehicle; per-vehicle evidence strip over time (solid = observed, hatched = inferred, red line = now); an "Inferred collision" card with its supporting observations; supporting evidence grouped into *Observed* (measured / rule-computed) and *Inferred or reported* (AI reading / statement).
+
+Checked in an isolated backend (demo sensor + witness files, own storage; the user's run untouched): junction map at the impact frame, legend, split bar, strip, grouped evidence, dark mode. The CCTV clip reads as 100% inferred (schematic), which is correct. Build OK.

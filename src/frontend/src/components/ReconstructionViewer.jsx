@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import CameraTrajectories from './CameraTrajectories'
 import Panel from './Panel'
-import ReconstructionTrace from './ReconstructionTrace'
+import ReconstructionTrace, { isObservedSource } from './ReconstructionTrace'
 
 const SIGNAL_COLORS = { red: '#dc2626', yellow: '#eab308', green: '#16a34a' }
 // Inbound lanes (left-hand traffic): where each approach's stop line and signal head sit, in lane widths.
@@ -211,7 +211,9 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
   const half = L // two lanes per road -> half-width = one lane width each side
   const showCollision = data.collision && time >= data.collision.t_s - 1e-6
 
-  const isMeasured = (vid, t) => !derived.known || derived.measured[vid].some((m) => Math.abs(m - t) < 0.01)
+  // Observed = read from a sensor sample or tracked in video. Everything else (interpolated, extrapolated,
+  // estimated) is an inference. Old data without a point source falls back to the measured keyframes.
+  const obsPoint = (vid, q) => (q.source ? isObservedSource(q.source) : !derived.known || derived.measured[vid].some((m) => Math.abs(m - q.t_s) < 0.01))
 
   const step = (dir) => {
     setPlaying(false)
@@ -237,10 +239,10 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
   const labels = layoutLabels([
     ...current.map(({ v, p }) => ({
       key: v.vehicle_id, x: p.x_m, y: -p.y_m, color: 'var(--color-slate-900)',
-      text: `${v.vehicle_id}${p.speed_kmh != null ? ` · ${p.speed_kmh.toFixed(0)} km/h` : ''}`,
+      text: `${v.vehicle_id}${p.speed_kmh != null ? ` · ${p.speed_kmh.toFixed(0)} km/h` : ''}${selected === v.vehicle_id ? (obsPoint(v.vehicle_id, p) ? ' · observed' : ' · inferred') : ''}`,
     })),
-    ...(showCollision ? [{ key: 'collision', x: data.collision.x_m, y: -data.collision.y_m + 2 * fs, color: '#b91c1c', side: 'left',
-      text: `impact t=${data.collision.t_s.toFixed(1)}s` }] : []),
+    ...(showCollision ? [{ key: 'collision', x: data.collision.x_m, y: -data.collision.y_m + 2 * fs, color: 'var(--color-red-700)', side: 'left',
+      text: `inferred impact t=${data.collision.t_s.toFixed(1)}s` }] : []),
   ], fs)
 
   const signalNow = Object.entries(derived.signals).map(([appr, phases]) => [appr, signalAt(phases, time)]).filter(([, st]) => st)
@@ -302,7 +304,7 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
 
           {showCollision && (
             <g transform={`translate(${data.collision.x_m},${data.collision.y_m})`} opacity={0.85}>
-              <circle r={2.2} fill="#fecaca" fillOpacity={0.5} stroke="#dc2626" strokeWidth={0.2} />
+              <circle r={2.2} fill="#fecaca" fillOpacity={0.5} stroke="#dc2626" strokeWidth={0.2} strokeDasharray="0.6 0.5" />
               <path d="M-1,-1 L1,1 M-1,1 L1,-1" stroke="#dc2626" strokeWidth={0.2} />
             </g>
           )}
@@ -317,22 +319,26 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
                   fill="none" stroke={v.color} strokeWidth={0.25 * Math.max(s, 0.4)} strokeOpacity={selected === v.vehicle_id ? 0.4 : 0.15} />}
                 {pts.slice(1).map((b, i) => {
                   const a = pts[i]
-                  // the last segment ends at the vehicle, inside the grid step that ends at nextGridTime
-                  const end = b === p ? nextGridTime(v.track, time) : b.t_s
-                  const solid = isMeasured(v.vehicle_id, a.t_s) && isMeasured(v.vehicle_id, end)
+                  // the last segment ends at the vehicle, inside the grid step that ends at nextPoint
+                  const end = b === p ? nextPoint(v.track, time) : b
+                  const solid = obsPoint(v.vehicle_id, a) && obsPoint(v.vehicle_id, end)
                   return (
                     <line key={i} x1={a.x_m} y1={a.y_m} x2={b.x_m} y2={b.y_m} stroke={v.color}
                       strokeWidth={0.5 * Math.max(s, 0.4)} strokeOpacity={0.7}
                       strokeDasharray={solid ? undefined : `${1.2 * s} ${0.9 * s}`} />
                   )
                 })}
-                {derived.known && past.filter((q) => isMeasured(v.vehicle_id, q.t_s)).map((q) => (
+                {past.filter((q) => obsPoint(v.vehicle_id, q)).map((q) => (
                   <circle key={q.t_s} cx={q.x_m} cy={q.y_m} r={0.5 * Math.max(s, 0.4)} fill={v.color} stroke="white" strokeWidth={0.1} />
+                ))}
+                {selected === v.vehicle_id && past.filter((q) => !obsPoint(v.vehicle_id, q)).map((q) => (
+                  <circle key={q.t_s} cx={q.x_m} cy={q.y_m} r={0.4 * Math.max(s, 0.4)} fill="var(--color-white)" stroke={v.color} strokeWidth={0.12 * Math.max(s, 0.4)} />
                 ))}
                 <g transform={`translate(${p.x_m},${p.y_m}) rotate(${-p.heading_deg}) scale(${carScale})`}>
                   {selected === v.vehicle_id && <circle r={3.2} fill="none" stroke="#0f172a" strokeWidth={0.2} strokeDasharray="0.6 0.5" />}
                   {schematic && <ellipse rx={2.4} ry={3.4} fill={v.color} fillOpacity={0.12} />}
-                  <rect x={-0.9} y={-2.25} width={1.8} height={4.5} rx={0.4} fill={v.color} stroke="#0f172a" strokeWidth={0.15} />
+                  <rect x={-0.9} y={-2.25} width={1.8} height={4.5} rx={0.4} fill={v.color} fillOpacity={obsPoint(v.vehicle_id, p) ? 1 : 0.5}
+                    stroke="#0f172a" strokeWidth={0.15} strokeDasharray={obsPoint(v.vehicle_id, p) ? undefined : '0.5 0.4'} />
                   <rect x={-0.7} y={0.8} width={1.4} height={0.9} fill="#e2e8f0" />
                 </g>
               </g>
@@ -370,8 +376,8 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
               style={{ left: `${((m.t - data.t_min_s) / (data.t_max_s - data.t_min_s)) * 100}%` }} />
           ))}
           {data.collision && data.t_max_s > data.t_min_s && (
-            <span title={`impact t=${data.collision.t_s}s`} className="pointer-events-none absolute top-5 -translate-x-1/2 text-[0.7rem] leading-none text-red-600"
-              style={{ left: `${((data.collision.t_s - data.t_min_s) / (data.t_max_s - data.t_min_s)) * 100}%` }}>▲ impact</span>
+            <span title={`inferred impact t=${data.collision.t_s}s`} className="pointer-events-none absolute top-5 -translate-x-1/2 text-[0.7rem] leading-none text-red-600"
+              style={{ left: `${((data.collision.t_s - data.t_min_s) / (data.t_max_s - data.t_min_s)) * 100}%` }}>▲ inferred impact</span>
           )}
         </div>
         <select value={rate} onChange={(e) => setRate(Number(e.target.value))} aria-label="Playback speed"
@@ -388,16 +394,28 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
             <span className="inline-block h-2 w-3 rounded-sm" style={{ background: v.color }} />{v.label}
           </button>
         ))}
-        {derived.known && (
-          <span className="flex items-center gap-2 text-slate-500">
-            {schematic ? <><svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="#475569" strokeWidth="2" strokeDasharray="4 3" /></svg>estimated (schematic)</> : <><svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="#475569" strokeWidth="2" /></svg>measured
-            <svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="#475569" strokeWidth="2" strokeDasharray="4 3" /></svg>interpolated / estimated</>}
-          </span>
-        )}
         <a href={api.positionsUrl} className="ml-auto rounded border border-slate-200 px-2 py-0.5 text-slate-600 hover:bg-slate-50">
           Download positions (JSON)
         </a>
-        {data.collision && <span className="text-red-600">✕ collision at t={data.collision.t_s}s (conf {data.collision.confidence})</span>}
+      </div>
+      <div className="mt-2 grid gap-2 rounded border border-slate-200 p-2 text-xs sm:grid-cols-2">
+        <div className="flex items-start gap-2">
+          <svg width="30" height="14" className="mt-0.5 shrink-0"><line x1="0" y1="7" x2="30" y2="7" stroke="var(--color-slate-700)" strokeWidth="2.5" /><circle cx="15" cy="7" r="3.5" fill="var(--color-slate-700)" stroke="var(--color-white)" /></svg>
+          <span><b className="text-emerald-700">Observed</b>
+            <span className="text-slate-500"> · read from a sensor sample or tracked in video. Solid line, filled dot, solid vehicle.</span></span>
+        </div>
+        <div className="flex items-start gap-2">
+          <svg width="30" height="14" className="mt-0.5 shrink-0"><line x1="0" y1="7" x2="30" y2="7" stroke="var(--color-slate-700)" strokeWidth="2.5" strokeDasharray="5 4" /><circle cx="15" cy="7" r="3.5" fill="var(--color-white)" stroke="var(--color-slate-700)" strokeWidth="1.5" /></svg>
+          <span><b className="text-violet-700">Inferred</b>
+            <span className="text-slate-500"> · filled in between or beyond samples, or assumed. Dashed line, hollow dot, faded vehicle.</span></span>
+        </div>
+        {data.collision && (
+          <div className="flex items-start gap-2 sm:col-span-2">
+            <svg width="30" height="14" className="mt-0.5 shrink-0"><circle cx="15" cy="7" r="6" fill="#fecaca" fillOpacity="0.5" stroke="#dc2626" strokeDasharray="3 2" /></svg>
+            <span><b className="text-red-600">Inferred collision</b>
+              <span className="text-slate-500"> · t={data.collision.t_s}s, confidence {Math.round(data.collision.confidence * 100)}%. Placed where the tracks come closest; it was not witnessed or recorded as an event.</span></span>
+          </div>
+        )}
       </div>
       {signalNow.length > 0 && (
         <div className="mt-1 flex flex-wrap gap-3 text-xs text-slate-600">
@@ -417,7 +435,7 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
   )
 }
 
-// First track time at or after t: the end of the grid segment the vehicle is currently in.
-function nextGridTime(track, t) {
-  return (track.find((q) => q.t_s >= t) ?? track[track.length - 1]).t_s
+// First track point at or after t: the end of the grid segment the vehicle is currently in.
+function nextPoint(track, t) {
+  return track.find((q) => q.t_s >= t) ?? track[track.length - 1]
 }
