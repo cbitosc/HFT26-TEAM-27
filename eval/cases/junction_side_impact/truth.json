@@ -83,5 +83,20 @@
   "reconstruction": {
     "scene": "four_way_intersection",
     "min_vehicles": 2
-  }
+  },
+  "absent_conflicts": [
+    {
+      "desc": "no clock-time conflict (W2's 'about quarter to six' covers the record)",
+      "type": "timestamp_overlap",
+      "requires_llm": true
+    },
+    {
+      "desc": "no speed conflict for V1 (no witness gives V1 a number)",
+      "type": "numeric_mismatch",
+      "contains": [
+        "V1"
+      ],
+      "requires_llm": true
+    }
+  ]
 }

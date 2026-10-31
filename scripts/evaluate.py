@@ -124,14 +124,26 @@ def score(truth: dict, out: dict, llm: bool) -> list[dict]:
             if len(coll) > 1:
                 add("collision", "exactly one collision event", False, f"{len(coll)} collision events")
 
+    def matching(c):
+        return next((x for x in out["conflicts"] if x["type"] == c["type"] and all(
+            k.lower() in (x["title"] + " " + x["description"] + " " + " ".join(x["observation_ids"])).lower()
+            or k in [obs.get(i, {}).get("vehicle_id") for i in x["observation_ids"]] for k in c.get("contains", []))), None)
+
     for c in truth.get("conflicts", []):
         if c.get("requires_llm") and not (llm and witness_ran):
             add("conflict", c["desc"], False, "needs witness extraction (LLM key)", skipped=True)
             continue
-        hit = next((x for x in out["conflicts"] if x["type"] == c["type"] and all(
-            k.lower() in (x["title"] + " " + x["description"] + " " + " ".join(x["observation_ids"])).lower()
-            or k in [obs.get(i, {}).get("vehicle_id") for i in x["observation_ids"]] for k in c["contains"])), None)
+        hit = matching(c)
         add("conflict", c["desc"], hit is not None, hit["title"] if hit else "not found")
+
+    # Conflicts that must NOT be raised: recall alone rewards a system that flags everything, so cases also say what is
+    # consistent (a witness whose time and speed agree with the record) and the score fails on a false alarm.
+    for c in truth.get("absent_conflicts", []):
+        if c.get("requires_llm") and not (llm and witness_ran):
+            add("no false alarm", c["desc"], False, "needs witness extraction (LLM key)", skipped=True)
+            continue
+        hit = matching(c)
+        add("no false alarm", c["desc"], hit is None, "none raised" if hit is None else f"raised: {hit['title']}")
 
     if want := truth.get("reconstruction"):
         rec = out["reconstruction"]

@@ -46,5 +46,12 @@
   "reconstruction": {
     "scene": "metric",
     "min_vehicles": 2
-  }
+  },
+  "absent_conflicts": [
+    {
+      "desc": "no clock-time conflict (the witness's local time matches the record)",
+      "type": "timestamp_overlap",
+      "requires_llm": true
+    }
+  ]
 }

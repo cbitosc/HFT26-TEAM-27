@@ -31,7 +31,7 @@ from __future__ import annotations
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -276,6 +276,23 @@ def _confidence(raw: str, certainty: str | None) -> float:
     return round(min(max(conf, 0.05), 0.95), 2)
 
 
+def _clock_zone_known() -> bool:
+    """Witnesses give local wall-clock times. They can be placed on the evidence's timeline only if the case declared its
+    clock, or the evidence itself states a local UTC offset: epoch seconds and "Z" timestamps are UTC and say nothing
+    about the scene's zone, and a placeholder reference time is not a clock at all."""
+    ref = config.INCIDENT_REFERENCE_TIME
+    return config.REFERENCE_SOURCE == "case" or (config.REFERENCE_SOURCE == "evidence" and ref.utcoffset() != timedelta(0))
+
+
+NUMBER_WORDS = re.compile(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|"
+                          r"sixty|seventy|eighty|ninety|hundred)\b", re.I)
+
+
+def states_a_number(quote: str) -> bool:
+    """Does the quote itself give a number? A speed figure is only the witness's if they said one."""
+    return bool(re.search(r"\d", quote) or NUMBER_WORDS.search(quote))
+
+
 def _clock_timestamp(clock: str | None) -> datetime | None:
     if not clock:
         return None
@@ -423,8 +440,20 @@ def extract_witness(evidence: Evidence) -> ObservationSet:
             attrs["approach"] = BOUND_APPROACH[direction]
         elif llm_dir:
             warn(f"{file} line {line}: direction '{llm_dir}' dropped (not stated in the quote).")
+        # A speed the model attached to a sentence with no number in it is the model's, not the witness's ("going fast").
+        if attrs.get("speed_kmh") is not None and not states_a_number(raw):
+            warn(f"{file} line {line}: speed {attrs['speed_kmh']:g} km/h dropped (the quote gives no number).")
+            attrs.pop("speed_kmh")
+            attrs.pop("speed_qualifier", None)
         ts = _clock_timestamp(item.get("clock_time"))
         uncertainty = 0.0
+        if ts is not None and not _clock_zone_known():
+            # Shown, not compared: a local "about 09:15" against a UTC clock would be a false contradiction.
+            attrs["clock_time"] = ts.strftime("%H:%M")
+            attrs["clock_zone"] = "unknown"
+            warn(f"{file} line {line}: clock time {attrs['clock_time']} is local time, but this case's clock zone is unknown "
+                 "(the evidence is UTC or unplaced); it is shown but not compared. Declare the case's reference time with its UTC offset.")
+            ts = None
         if ts is not None:
             attrs["clock_time"] = ts.strftime("%H:%M")
             try:

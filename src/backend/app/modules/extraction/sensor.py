@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -648,6 +648,9 @@ def scan_csv(path: str) -> dict:
             first = df[tcol][ts.index[ts.argmin()]]
             parsed = pd.Timestamp(first) if kind == "iso" else ts.min()
             out["earliest"] = (parsed if parsed.tzinfo else parsed.tz_localize("UTC")).to_pydatetime()
+            # A file that states a local UTC offset (+05:30) tells where the clock is; epoch seconds and "Z" say nothing.
+            if parsed.tzinfo is not None and parsed.utcoffset() != timedelta(0):
+                out["zone"] = parsed.utcoffset()
     lat, lon = _pick(cols, LAT_COLS), _pick(cols, LON_COLS)
     if lat and lon:
         la, lo = pd.to_numeric(df[lat], errors="coerce").dropna(), pd.to_numeric(df[lon], errors="coerce").dropna()

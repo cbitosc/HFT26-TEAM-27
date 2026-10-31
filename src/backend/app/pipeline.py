@@ -20,7 +20,7 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Protocol
 
 from app import config, store
@@ -179,8 +179,17 @@ def _prepare_run_frame(evidence: list[Evidence]) -> None:
     stamped = [(s["earliest"], e.filename) for e, s in scans if "earliest" in s]
     if stamped:
         earliest, name = min(stamped, key=lambda p: p[0])
+        detail = f"earliest timestamp in {name}"
+        # The same instant, shown in the scene's own zone when the evidence says what it is: epoch seconds are UTC by
+        # definition and say nothing about where the scene is, while another file may state "+05:30". Witnesses give
+        # local wall-clock times, so the zone decides whether their "about 09:15" is compared fairly.
+        zones = {s["zone"] for _, s in scans if "zone" in s}
+        if earliest.utcoffset() == timedelta(0) and len(zones) == 1:
+            zone = next(iter(zones))
+            earliest = earliest.astimezone(timezone(zone))
+            detail += f" (shown in the UTC{'+' if zone >= timedelta(0) else '-'}{str(abs(zone))[:-3]} zone another file states)"
         config.INCIDENT_REFERENCE_TIME, config.REFERENCE_SOURCE = earliest, "evidence"
-        config.REFERENCE_DETAIL = f"earliest timestamp in {name}"
+        config.REFERENCE_DETAIL = detail
     else:
         config.REFERENCE_SOURCE = "default"
         config.REFERENCE_DETAIL = ""

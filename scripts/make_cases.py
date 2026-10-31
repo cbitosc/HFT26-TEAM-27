@@ -59,6 +59,10 @@ def junction_side_impact() -> None:
             {"desc": "W1 says V2 never slowed", "type": "semantic", "contains": ["V2", "no braking"], "requires_llm": True},
             {"desc": "V1 telemetry gap", "type": "missing_evidence", "contains": ["V1", "dropout"]},
         ],
+        "absent_conflicts": [
+            {"desc": "no clock-time conflict (W2's 'about quarter to six' covers the record)", "type": "timestamp_overlap", "requires_llm": True},
+            {"desc": "no speed conflict for V1 (no witness gives V1 a number)", "type": "numeric_mismatch", "contains": ["V1"], "requires_llm": True},
+        ],
     })
     for f in list((ROOT / "data" / "sensor").glob("*.csv")) + list((ROOT / "data" / "witness").glob("*.txt")):
         shutil.copy(f, ev / f.name)
@@ -108,6 +112,9 @@ def gps_rear_end() -> None:
             {"desc": "W1 says the truck went slowly (about 20)", "type": "numeric_mismatch", "contains": ["B"],
              "requires_llm": True},
             {"desc": "W2 says the truck never braked", "type": "semantic", "contains": ["B", "no braking"], "requires_llm": True},
+        ],
+        "absent_conflicts": [
+            {"desc": "no clock-time conflict (the witness's local time matches the record)", "type": "timestamp_overlap", "requires_llm": True},
         ],
     })
     with open(ev / "lead_gps.csv", "w", newline="") as f:     # Unix seconds, lat/lon only
