@@ -143,7 +143,7 @@ export default function App() {
         {pane('evidence', <div className="mx-auto max-w-2xl"><EvidenceManager run={run} observations={results?.observations}
           onAnalysisDone={loadResults} onRunningChange={setAnalysing} /></div>)}
         {pane('timeline', <IncidentTimeline timeline={results?.timeline} time={time} selectedObs={selectedObs} onFocus={focus}
-          observationsById={observationsById} />)}
+          observationsById={observationsById} eventAnalysis={results?.eventAnalysis} />)}
         {pane('contradictions', <ContradictionExplorer report={results?.conflicts} observationsById={observationsById} onFocus={focus} />)}
         {pane('reconstruction', <ReconstructionViewer data={results?.reconstruction} time={time} onTimeChange={setTime}
           timeline={results?.timeline} conflicts={results?.conflicts} observationsById={observationsById} onFocus={focus} />)}

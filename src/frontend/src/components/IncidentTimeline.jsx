@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import EventFrame from './EventFrame'
 import ObservationList from './ObservationList'
 import Panel, { BasisBadge, SourceBadge } from './Panel'
 
@@ -10,7 +11,7 @@ const CATEGORY_COLORS = {
   other: 'bg-slate-400',
 }
 
-export default function IncidentTimeline({ timeline, time, selectedObs, onFocus, observationsById }) {
+export default function IncidentTimeline({ timeline, time, selectedObs, onFocus, observationsById, eventAnalysis }) {
   const [selected, setSelected] = useState(null)
   if (!timeline) return <Panel title="Incident Timeline">Loading…</Panel>
 
@@ -66,6 +67,7 @@ export default function IncidentTimeline({ timeline, time, selectedObs, onFocus,
             <h3 className="text-xs font-semibold text-slate-700">Evidence for “{current.label}”</h3>
             <span className="shrink-0 text-[10px] text-slate-400">confidence {Math.round(current.confidence * 100)}%</span>
           </div>
+          <EventFrame event={current} observationsById={observationsById} eventAnalysis={eventAnalysis} />
           <ObservationList ids={current.observation_ids} observationsById={observationsById} />
         </div>
       )}

@@ -597,3 +597,13 @@ Toggle (sun/moon switch) in the top right of the header. First visit follows the
 How: `.dark` class on `<html>`. Instead of a `dark:` variant on every utility, `index.css` inverts the neutral Tailwind scale (and `white`) under `.dark` and re-derives the tinted shades (amber, emerald, red, sky, violet, yellow, lime, rose, blue) on a dark base, so every existing component is themed without edits. The header and tab bar use fixed colours (always dark). The reconstruction map's road, labels and text use theme variables so they follow the mode. `ReconstructionViewer.jsx` colours only; no logic change.
 
 Checked in the browser: toggle, persistence, overview and reconstruction in dark, back to light. Build OK; `pytest` unaffected (frontend only).
+
+## 2026-10-31 · Timeline: annotated frame for the selected event
+
+Clicking a timeline event now shows the real video frame behind it, annotated, above the evidence list (`EventFrame.jsx`, wired through `IncidentTimeline` and `App`; frontend only, uses the existing frame endpoint and the observations/event-analysis already loaded).
+- **Vehicle observation with a box** (e.g. "white van stopped"): the frame (cropped to its camera view) with the box, label, action and confidence, plus a zoomed crop of the vehicle. The box is the vision model's 0-1000 box converted to pixels; the caption says it is an AI reading, not a measurement.
+- **Track observation:** the tracked path through the view with the event-time position marked.
+- **Sensor spike** (has no vehicle): the camera view at that time, outlined, with the tracker's vehicles at that moment as dots; the caption says a spike does not identify a vehicle (and says so when none were tracked).
+- Every figure carries source and basis badges, frame number, time and confidence; click opens the full frame. Events with no video evidence (witness only, fixtures) show nothing extra.
+
+Checked in the browser on the user's clip: the white-van event (box + zoom) and the motion-spike event. Build OK.
