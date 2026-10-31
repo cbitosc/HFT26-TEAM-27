@@ -779,3 +779,9 @@ Fixes: (a) `scan_csv` reports a file's own non-UTC offset; `_prepare_run_frame` 
 Guard: `truth.json` gains `absent_conflicts`, scored as "no false alarm" by `scripts/evaluate.py` (skipped without an AI key): junction (no clock-time conflict, no V1 speed conflict) and GPS (no clock-time conflict). The evaluation measured recall only; this is its first precision check. Confirmed the end-to-end test fails with just (a) and (b) reverted (the original conflict returns) and passes with them.
 
 Tests: `tests/test_false_positives.py` (13). `pytest` 220 passed; evaluation 32/32 offline, 42/42 with the AI-backed cases.
+
+## 2026-10-31 · Event confidence counts independent evidence once; speed grounding by value; pitch pack
+
+- Timeline confidence (`combined_confidence`): a witness-only event counted its observation twice (0.79 showed as 0.956). Now each observation counts once, one file/statement is one source (the strongest), a fused observation is not added to its inputs, then noisy-OR across sources. Tests in `tests/test_timeline.py`; the end-to-end one fails on the old code.
+- Witness speed grounding changed from "the quote has a number" (it dropped a real 80 km/h the model attached to the next sentence, missing two true conflicts) to "a matching number (km/h, mph, m/s, knots) appears in the lines around the quote" (`speed_is_stated`). Junction case 13/13 in 4 repeat runs with the AI on.
+- `docs/PITCH_PACK.md`: slide-by-slide facts. `pytest` 228 passed.

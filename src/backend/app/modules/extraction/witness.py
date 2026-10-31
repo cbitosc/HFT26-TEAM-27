@@ -284,13 +284,20 @@ def _clock_zone_known() -> bool:
     return config.REFERENCE_SOURCE == "case" or (config.REFERENCE_SOURCE == "evidence" and ref.utcoffset() != timedelta(0))
 
 
-NUMBER_WORDS = re.compile(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|"
-                          r"sixty|seventy|eighty|ninety|hundred)\b", re.I)
+NUMBER_WORD_VALUES = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+                      "eleven": 11, "twelve": 12, "fifteen": 15, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
+                      "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90, "hundred": 100}
+NUMBER_WORDS = re.compile(r"\b(" + "|".join(NUMBER_WORD_VALUES) + r")\b", re.I)
+# What one unit of each speed unit is in km/h, with how far off a rounded figure may be.
+UNIT_TO_KMH = ((1.0, 1.0), (1.609344, 3.0), (3.6, 4.0), (1.852, 3.0))   # km/h, mph, m/s, knots
 
 
-def states_a_number(quote: str) -> bool:
-    """Does the quote itself give a number? A speed figure is only the witness's if they said one."""
-    return bool(re.search(r"\d", quote) or NUMBER_WORDS.search(quote))
+def speed_is_stated(speed_kmh: float, text: str) -> bool:
+    """Is this speed a figure the witness gave? True if a number in `text` is that speed in km/h, mph, m/s or knots (to
+    within rounding). The model sometimes attaches a speed to the neighbouring sentence, so `text` is the lines around
+    the quote; what it must not do is invent one for "it was going fast"."""
+    numbers = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", text)] + [NUMBER_WORD_VALUES[w.lower()] for w in NUMBER_WORDS.findall(text)]
+    return any(abs(n * factor - speed_kmh) <= tolerance for n in numbers for factor, tolerance in UNIT_TO_KMH)
 
 
 def _clock_timestamp(clock: str | None) -> datetime | None:
@@ -440,9 +447,9 @@ def extract_witness(evidence: Evidence) -> ObservationSet:
             attrs["approach"] = BOUND_APPROACH[direction]
         elif llm_dir:
             warn(f"{file} line {line}: direction '{llm_dir}' dropped (not stated in the quote).")
-        # A speed the model attached to a sentence with no number in it is the model's, not the witness's ("going fast").
-        if attrs.get("speed_kmh") is not None and not states_a_number(raw):
-            warn(f"{file} line {line}: speed {attrs['speed_kmh']:g} km/h dropped (the quote gives no number).")
+        # A speed with no matching number in the statement around the quote is the model's, not the witness's ("going fast").
+        if attrs.get("speed_kmh") is not None and not speed_is_stated(attrs["speed_kmh"], " ".join(stmt.lines[max(0, line - 3):line + 2])):
+            warn(f"{file} line {line}: speed {attrs['speed_kmh']:g} km/h dropped (no such number near the quote).")
             attrs.pop("speed_kmh")
             attrs.pop("speed_qualifier", None)
         ts = _clock_timestamp(item.get("clock_time"))

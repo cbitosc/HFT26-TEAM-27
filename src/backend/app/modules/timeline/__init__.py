@@ -81,6 +81,28 @@ def _statement_key(o: Observation) -> str:
     return f"{o.source_ref.evidence_id}|{o.source_ref.file}"
 
 
+def combined_confidence(observations) -> float:
+    """How well the evidence supports an event: agreement between *independent* sources raises it, the same evidence is
+    never counted twice.
+
+    * every observation counts once (an observation can sit in a cluster as core evidence and as an ordered claim);
+    * observations from one file or statement are one source, represented by the strongest: a telematics log with 25 rows
+      or a witness who says the same thing three times is not three confirmations;
+    * an observation computed from others (a fused collision from two heading changes) already carries them, so its
+      inputs are not added on top;
+    * sources are then combined by noisy-OR: 1 - prod(1 - c), so each independent source can only add confidence.
+    """
+    unique = list({o.id: o for o in observations}.values())
+    consumed = {d for o in unique for d in o.derived_from}
+    best: dict[str, float] = {}
+    for o in unique:
+        if o.id in consumed:
+            continue
+        key = o.source_ref.evidence_id
+        best[key] = max(best.get(key, 0.0), o.confidence)
+    return _noisy_or(best.values())
+
+
 def _noisy_or(confs) -> float:
     confs = np.clip(np.asarray(list(confs), dtype=float), 0.0, 1.0)
     if confs.size == 0:
@@ -395,7 +417,7 @@ class _Builder:
                 "observation_ids": [o.id for o in members],
                 "source_types": sorted({o.source_type for o in members}, key=lambda s: s.value),
                 # clock claims say what happened, not when: they add no confidence
-                "confidence": round(_noisy_or(o.confidence for o in core + [a for a in c.attached if a.attributes.get("order") is not None]), 3),
+                "confidence": round(combined_confidence(core + [a for a in c.attached if a.attributes.get("order") is not None]), 3),
                 "uncertainty_s": round(c.uncertainty, 3),
                 # Observation vs inference: the strongest kind of evidence behind the event, and the mix.
                 "basis": min((o.basis for o in members), key=lambda b: BASIS_RANK[b]),

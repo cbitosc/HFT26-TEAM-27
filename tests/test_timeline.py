@@ -141,3 +141,54 @@ def test_several_provisional_vehicles_are_named_by_what_was_seen_not_by_id():
     labels = [e.label for e in build_timeline(sets).events if e.category == "post_collision"]
     assert labels == ["white sedan and dark SUV (camera view 1) come to rest after the collision"], labels
     assert not any("U-B1" in label for label in labels)
+
+
+# ----------------------------------------------------------------------- event confidence: independent sources only
+
+def _obs(i, file, conf, derived=(), source="sensor"):
+    from app.schemas import Observation, SourceRef
+    return Observation(id=i, source_type=source, source_ref=SourceRef(evidence_id=file, file=f"{file}.csv", locator="row:2"),
+                       t_rel_s=1.0, action="x", confidence=conf, derived_from=list(derived))
+
+
+def test_one_observation_counts_once_however_often_it_is_listed():
+    from app.modules.timeline import combined_confidence
+    a = _obs("a", "f1", 0.85)
+    assert combined_confidence([a]) == pytest.approx(0.85)
+    assert combined_confidence([a, a, a]) == pytest.approx(0.85)
+
+
+def test_repeated_observations_from_one_file_are_one_source_the_strongest():
+    from app.modules.timeline import combined_confidence
+    rows = [_obs(f"r{i}", "telematics", c) for i, c in enumerate([0.5, 0.98, 0.9])]
+    assert combined_confidence(rows) == pytest.approx(0.98)
+
+
+def test_agreement_between_independent_sources_raises_confidence():
+    from app.modules.timeline import combined_confidence
+    assert combined_confidence([_obs("a", "f1", 0.8), _obs("b", "f2", 0.7)]) == pytest.approx(1 - 0.2 * 0.3)
+    assert combined_confidence([_obs("a", "f1", 0.8), _obs("b", "f2", 0.7)]) > 0.8     # corroboration helps, and only that
+
+
+def test_an_observation_computed_from_others_is_not_counted_on_top_of_its_inputs():
+    from app.modules.timeline import combined_confidence
+    a, b = _obs("a", "v1", 0.9), _obs("b", "v2", 0.9)
+    fused = _obs("f", "fusion", 0.81, derived=["a", "b"])
+    assert combined_confidence([fused, a, b]) == pytest.approx(0.81)                   # the fused finding carries its inputs
+    w = _obs("w", "stmt1", 0.79, source="witness")
+    assert combined_confidence([fused, a, b, w]) == pytest.approx(1 - 0.19 * 0.21)     # an independent witness adds to it
+    assert combined_confidence([a, b]) == pytest.approx(1 - 0.1 * 0.1)                 # without the fused one, the inputs stand
+
+
+def test_a_witness_only_event_shows_the_witness_confidence_not_its_square(monkeypatch, tmp_path):
+    """The bug: an ordered witness claim was counted as core evidence and again as an ordered claim, so 0.85 became 0.978."""
+    from app.modules.extraction import extract_witness  # noqa: F401  (the mocked path below goes through it)
+    from app.modules.timeline import build_timeline
+    from test_extraction import _mock_witness
+    text = "The red car sped up to beat the light.\n"
+    reply = {"observations": [{"line": 1, "raw_text": "The red car sped up to beat the light", "vehicle_description": "red car",
+                               "action": "accelerating", "order": 1, "certainty": "certain"}]}
+    out, _ = _mock_witness(monkeypatch, tmp_path, text, [reply])
+    (claim,) = out.observations
+    (event,) = [e for e in build_timeline([out]).events if claim.id in e.observation_ids]
+    assert event.confidence == pytest.approx(claim.confidence, abs=0.001)

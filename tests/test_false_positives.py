@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from app import config, pipeline
 from app.main import app
 from app.modules.extraction.sensor import scan_csv
-from app.modules.extraction.witness import states_a_number
+from app.modules.extraction.witness import speed_is_stated
 from app.schemas import Evidence, SourceType
 from test_extraction import _mock_witness
 
@@ -21,14 +21,16 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 # ------------------------------------------------------------------ a speed must be a number the witness said
 
-@pytest.mark.parametrize("quote,expected", [
-    ("I would say at least 80 km/h", True), ("it was doing about forty", True), ("maybe 20", True),
-    ("The red car sped up to beat the light, it was going fast", False), ("really fast, much too fast", False)])
-def test_a_quote_states_a_number_or_it_does_not(quote, expected):
-    assert states_a_number(quote) is expected
+@pytest.mark.parametrize("speed,text,expected", [
+    (80, "I would say at least 80 km/h", True), (40, "it was doing about forty", True), (20, "maybe 20", True),
+    (80, "about 50 mph", True), (54, "roughly 15 m/s", True),                              # the same speed in another unit
+    (60, "The red car sped up to beat the light, it was going fast", False),               # a number from nowhere
+    (70, "really fast, much too fast. The crash was at quarter to six", False)])
+def test_a_speed_is_the_witnesss_only_if_a_matching_number_is_stated(speed, text, expected):
+    assert speed_is_stated(speed, text) is expected
 
 
-def test_a_speed_attached_to_a_sentence_without_a_number_is_dropped_and_said_so(monkeypatch, tmp_path):
+def test_an_invented_speed_is_dropped_and_said_so(monkeypatch, tmp_path):
     text = "The red car sped up, it was going fast.\nThe SUV came at least 80 km/h.\n"
     reply = {"observations": [
         {"line": 1, "raw_text": "The red car sped up, it was going fast", "vehicle_description": "red car", "action": "accelerating",
@@ -40,6 +42,17 @@ def test_a_speed_attached_to_a_sentence_without_a_number_is_dropped_and_said_so(
     assert "speed_kmh" not in fast.attributes and "speed_qualifier" not in fast.attributes
     assert stated.attributes["speed_kmh"] == 80.0 and stated.attributes["speed_qualifier"] == "at least"
     assert any("speed 60 km/h dropped" in w for w in out.warnings)
+
+
+def test_a_real_speed_the_model_attached_to_the_next_sentence_is_kept(monkeypatch, tmp_path):
+    """The model often puts "at least 80 km/h" on the following claim ("it did not slow down"). The witness did say it."""
+    text = "A big white SUV came from my left really fast, I would say at least 80 km/h.\nIt did not slow down at all.\n"
+    reply = {"observations": [
+        {"line": 2, "raw_text": "It did not slow down at all", "vehicle_description": "white SUV", "action": "no_braking",
+         "attributes": {"speed_kmh": 80, "speed_qualifier": "at least"}, "certainty": "fairly_sure"}]}
+    out, _ = _mock_witness(monkeypatch, tmp_path, text, [reply])
+    (o,) = out.observations
+    assert o.attributes["speed_kmh"] == 80.0 and not any("dropped" in w for w in out.warnings)
 
 
 # ------------------------------------------------------------------ the clock a witness's time is compared with
