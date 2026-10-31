@@ -15,6 +15,9 @@ function at(track, t) {
   return { x: track[track.length - 1].x_m, y: track[track.length - 1].y_m, speed: track[track.length - 1].speed_kmh }
 }
 
+// Tracks from the vision model's boxes (not from pixel motion) are inferred: drawn dotted and named.
+const isAi = (v) => (v.description ?? '').startsWith('AI-sighted')
+
 // Fixed-camera reconstruction: tracks drawn on the actual video frame, in image pixels.
 export default function CameraTrajectories({ data, time, onTimeChange, Panel, title = 'Event Analysis' }) {
   const [playing, setPlaying] = useState(false)
@@ -78,7 +81,8 @@ export default function CameraTrajectories({ data, time, onTimeChange, Panel, ti
             const past = v.track.filter((p) => p.t_s <= t)
             const pts = (showAll ? v.track : past).map((p) => `${p.x_m},${p.y_m}`).join(' ')
             return pts && <polyline key={v.vehicle_id} points={pts} fill="none" stroke={v.color}
-              strokeWidth={r / 2.5} strokeOpacity={showAll ? 0.35 : 0.8} />
+              strokeWidth={r / 2.5} strokeOpacity={showAll ? 0.35 : 0.8}
+              {...(isAi(v) ? { strokeLinecap: 'round', strokeDasharray: `0 ${r * 1.1}`, strokeWidth: r / 1.6, strokeOpacity: showAll ? 0.55 : 0.9 } : {})} />
           })}
           {active.map((v) => {
             const p = at(v.track, t)
@@ -87,8 +91,10 @@ export default function CameraTrajectories({ data, time, onTimeChange, Panel, ti
               ? <rect key={v.vehicle_id} x={p.x - r * 1.6} y={p.y - r * 1.6} width={r * 3.2} height={r * 3.2}
                   fill="none" stroke={v.color} strokeWidth={r / 2}><title>{v.label}</title></rect>
               : <g key={v.vehicle_id}>
-                  <circle cx={p.x} cy={p.y} r={r} fill={v.color} stroke="white" strokeWidth={r / 4}>
+                  <circle cx={p.x} cy={p.y} r={r} fill={isAi(v) ? 'none' : v.color} stroke={isAi(v) ? v.color : 'white'} strokeWidth={r / (isAi(v) ? 2.2 : 4)}>
                     <title>{`${v.label}: ${v.description}`}</title></circle>
+                  {isAi(v) && <text x={p.x + r * 1.4} y={p.y + r * 0.4} fontSize={r * 2.4} fontWeight="700" fill="white"
+                    stroke="black" strokeWidth={r / 3} paintOrder="stroke">{v.label}</text>}
                   {p.speed != null && <text x={p.x + r * 1.4} y={p.y - r} fontSize={r * 2.6} fontWeight="700" fill="white"
                     stroke="black" strokeWidth={r / 3} paintOrder="stroke">{Math.round(p.speed)} km/h</text>}
                 </g>
