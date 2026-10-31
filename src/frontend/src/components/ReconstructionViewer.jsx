@@ -370,7 +370,7 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
               style={{ left: `${((m.t - data.t_min_s) / (data.t_max_s - data.t_min_s)) * 100}%` }} />
           ))}
           {data.collision && data.t_max_s > data.t_min_s && (
-            <span title={`impact t=${data.collision.t_s}s`} className="pointer-events-none absolute top-5 -translate-x-1/2 text-[10px] leading-none text-red-600"
+            <span title={`impact t=${data.collision.t_s}s`} className="pointer-events-none absolute top-5 -translate-x-1/2 text-[0.7rem] leading-none text-red-600"
               style={{ left: `${((data.collision.t_s - data.t_min_s) / (data.t_max_s - data.t_min_s)) * 100}%` }}>▲ impact</span>
           )}
         </div>

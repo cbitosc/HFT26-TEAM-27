@@ -41,7 +41,7 @@ export default function IncidentTimeline({ timeline, time, selectedObs, onFocus,
               className={`flex cursor-pointer flex-col gap-1 rounded px-1 py-1 hover:bg-slate-50 sm:flex-row sm:items-center ${highlighted ? 'bg-yellow-50 ring-1 ring-yellow-300' : ''}`}>
               <div className="min-w-0 sm:w-64 sm:shrink-0 sm:pr-3">
                 <div className="text-xs font-medium">{e.label}</div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
+                <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[0.7rem] text-slate-500">
                   t={e.t_start_s}s{e.t_end_s !== e.t_start_s && `–${e.t_end_s}s`}
                   {e.uncertainty_s > 0 && ` ±${e.uncertainty_s}s`}
                   {e.source_types.map((s) => <SourceBadge key={s} type={s} />)}
@@ -57,7 +57,7 @@ export default function IncidentTimeline({ timeline, time, selectedObs, onFocus,
           )
         })}
       </ul>
-      <div className="mt-1 flex justify-between text-[10px] text-slate-400 sm:pl-64">
+      <div className="mt-1 flex justify-between text-[0.7rem] text-slate-400 sm:pl-64">
         <span>{tMin}s</span><span>{tMax}s</span>
       </div>
 
@@ -65,7 +65,7 @@ export default function IncidentTimeline({ timeline, time, selectedObs, onFocus,
         <div className="mt-3 rounded border border-slate-200 p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="text-xs font-semibold text-slate-700">Evidence for “{current.label}”</h3>
-            <span className="shrink-0 text-[10px] text-slate-400">confidence {Math.round(current.confidence * 100)}%</span>
+            <span className="shrink-0 text-[0.7rem] text-slate-400">confidence {Math.round(current.confidence * 100)}%</span>
           </div>
           <EventFrame event={current} observationsById={observationsById} eventAnalysis={eventAnalysis} />
           <ObservationList ids={current.observation_ids} observationsById={observationsById} />

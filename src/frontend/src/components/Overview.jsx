@@ -87,7 +87,7 @@ export default function Overview({ results, run, onOpen }) {
               </li>
             ))}
           </ul>
-          {events.length > 6 && <p className="mt-2 text-[11px] text-slate-400">+{events.length - 6} more</p>}
+          {events.length > 6 && <p className="mt-2 text-[0.75rem] text-slate-400">+{events.length - 6} more</p>}
         </Panel>
       </div>
 

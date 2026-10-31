@@ -607,3 +607,7 @@ Clicking a timeline event now shows the real video frame behind it, annotated, a
 - Every figure carries source and basis badges, frame number, time and confidence; click opens the full frame. Events with no video evidence (witness only, fixtures) show nothing extra.
 
 Checked in the browser on the user's clip: the white-van event (box + zoom) and the motion-spike event. Build OK.
+
+## 2026-10-31 · Larger text
+
+Root font size 16px → 17px (`index.css`), which scales all rem-based Tailwind text, spacing and controls together (~6%). The fixed 10px / 11px labels (`text-[10px]`, `text-[11px]`) became rem-based `0.7rem` / `0.75rem` so the smallest text scales too and is no longer below 12px. Frontend styling only; build OK.

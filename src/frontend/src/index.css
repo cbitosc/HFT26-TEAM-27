@@ -4,6 +4,11 @@
    utility, the neutral scale is inverted and the tinted shades are re-derived on a dark base. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Tailwind sizes are rem-based: raising the root size scales all text, spacing and controls together. */
+html {
+  font-size: 17px;
+}
+
 body {
   @apply bg-slate-100 text-slate-900 antialiased;
 }

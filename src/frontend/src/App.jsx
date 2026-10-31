@@ -129,7 +129,7 @@ export default function App() {
                 className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors ${active ? 'border-sky-400 text-[#fff]' : 'border-transparent text-[#94a3b8] hover:text-[#e2e8f0]'}`}>
                 {t.label}
                 {n != null && n !== 0 && (
-                  <span className={`rounded-full px-1.5 text-[10px] font-medium leading-4 ${t.id === 'contradictions' && high ? 'bg-[#ef4444] text-[#fff]' : 'bg-[#334155] text-[#e2e8f0]'}`}>{n}</span>
+                  <span className={`rounded-full px-1.5 text-[0.7rem] font-medium leading-4 ${t.id === 'contradictions' && high ? 'bg-[#ef4444] text-[#fff]' : 'bg-[#334155] text-[#e2e8f0]'}`}>{n}</span>
                 )}
               </button>
             )
@@ -149,7 +149,7 @@ export default function App() {
           timeline={results?.timeline} conflicts={results?.conflicts} observationsById={observationsById} onFocus={focus} />)}
         {pane('footage', <EventAnalysis data={results?.eventAnalysis} time={time} onTimeChange={setTime} />)}
       </main>
-      <footer className="mx-auto max-w-7xl px-4 pb-6 text-[11px] text-slate-400">
+      <footer className="mx-auto max-w-7xl px-4 pb-6 text-[0.75rem] text-slate-400">
         {confirmed && schematic && 'Reconstruction is a schematic estimate. '}Observations are not legal conclusions.
       </footer>
     </div>

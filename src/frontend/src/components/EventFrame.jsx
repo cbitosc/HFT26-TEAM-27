@@ -135,7 +135,7 @@ function Shot({ shot, ea }) {
           </div>
         )}
       </div>
-      <figcaption className="space-y-1 p-2 text-[11px] text-slate-600">
+      <figcaption className="space-y-1 p-2 text-[0.75rem] text-slate-600">
         <div className="flex flex-wrap items-center gap-1.5">
           <SourceBadge type={o.source_type} /><BasisBadge basis={o.basis} />
           <span className="font-medium text-slate-700">{o.vehicle_description ?? o.action.replaceAll('_', ' ')}</span>

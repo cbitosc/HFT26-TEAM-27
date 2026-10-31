@@ -17,7 +17,7 @@ export const SOURCE_STYLES = {
 }
 
 export function SourceBadge({ type }) {
-  return <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${SOURCE_STYLES[type] ?? 'bg-slate-100'}`}>{type}</span>
+  return <span className={`rounded px-1.5 py-0.5 text-[0.7rem] font-medium uppercase ${SOURCE_STYLES[type] ?? 'bg-slate-100'}`}>{type}</span>
 }
 
 // Observation vs inference (problem statement requirement 5).
@@ -31,5 +31,5 @@ const BASIS = {
 export function BasisBadge({ basis }) {
   if (!basis || !BASIS[basis]) return null
   const [cls, title] = BASIS[basis]
-  return <span title={title} className={`rounded px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset ${cls}`}>{basis}</span>
+  return <span title={title} className={`rounded px-1.5 py-0.5 text-[0.7rem] font-medium ring-1 ring-inset ${cls}`}>{basis}</span>
 }

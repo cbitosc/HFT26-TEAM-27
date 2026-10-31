@@ -120,7 +120,7 @@ export default function EvidenceManager({ run, observations, onAnalysisDone, onR
         </div>
       )}
       {job && !running && job.finished_at && (
-        <p className="mt-1 text-[11px] text-slate-400">Last run took {elapsed(job.started_at, job.finished_at)}.</p>
+        <p className="mt-1 text-[0.75rem] text-slate-400">Last run took {elapsed(job.started_at, job.finished_at)}.</p>
       )}
       {message && <p className="mt-2 text-xs text-red-600">{message}</p>}
 
@@ -136,7 +136,7 @@ export default function EvidenceManager({ run, observations, onAnalysisDone, onR
                   </span>
                   <span className="min-w-0 truncate" title={s.stage}>{s.stage}</span>
                 </div>
-                {s.note && s.status !== 'real' && <p className="mt-0.5 pl-[4.5rem] text-[11px] text-slate-500">{s.note}</p>}
+                {s.note && s.status !== 'real' && <p className="mt-0.5 pl-[4.5rem] text-[0.75rem] text-slate-500">{s.note}</p>}
               </li>
             ))}
           </ul>
@@ -148,7 +148,7 @@ export default function EvidenceManager({ run, observations, onAnalysisDone, onR
           <summary className="cursor-pointer text-xs font-semibold uppercase text-slate-500">Analysis notes ({notes.length})</summary>
           <ul className="mt-1 space-y-1">
             {notes.map(({ w, type }, i) => (
-              <li key={i} className="flex gap-1.5 text-[11px] text-slate-600"><SourceBadge type={type} /><span>{w}</span></li>
+              <li key={i} className="flex gap-1.5 text-[0.75rem] text-slate-600"><SourceBadge type={type} /><span>{w}</span></li>
             ))}
           </ul>
         </details>

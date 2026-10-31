@@ -36,7 +36,7 @@ function ConfidenceBar({ value }) {
 
 function SourceMix({ stats }) {
   return (
-    <ul className="space-y-0.5 text-[11px] text-slate-600">
+    <ul className="space-y-0.5 text-[0.75rem] text-slate-600">
       {Object.entries(stats.counts).map(([src, n]) => (
         <li key={src} className="flex justify-between gap-2">
           <span>{SOURCE_LABELS[src] ?? src}</span>
@@ -64,7 +64,7 @@ export default function ReconstructionTrace({ data, time, selected, onSelect, po
         </div>
         <ConfidenceBar value={all.mean} />
         <div className="mt-2"><SourceMix stats={all} /></div>
-        <p className="mt-2 text-[11px] leading-snug text-slate-500">
+        <p className="mt-2 text-[0.75rem] leading-snug text-slate-500">
           {schematic
             ? 'Only who moved where relative to whom, and in what order, is supported. Distances, speeds and any impact point are not.'
             : 'Solid line = positions at real samples; dashed = filled in between. A map is a reconstruction of what may have happened, not a legal finding.'}
@@ -73,17 +73,17 @@ export default function ReconstructionTrace({ data, time, selected, onSelect, po
 
       <section className="rounded border border-slate-200 p-2.5">
         <h3 className="mb-1 font-semibold text-slate-700">Trace a vehicle</h3>
-        {!vehicle && <p className="text-[11px] text-slate-500">Click a vehicle on the map or in the legend to see the evidence it is built from.</p>}
+        {!vehicle && <p className="text-[0.75rem] text-slate-500">Click a vehicle on the map or in the legend to see the evidence it is built from.</p>}
         {vehicle && (
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-1.5 font-medium text-slate-800">
                 <span className="inline-block h-2.5 w-3.5 rounded-sm" style={{ background: vehicle.color }} />{vehicle.label}
               </span>
-              <button onClick={() => onSelect(null)} className="text-[11px] text-slate-400 hover:text-slate-700">clear</button>
+              <button onClick={() => onSelect(null)} className="text-[0.75rem] text-slate-400 hover:text-slate-700">clear</button>
             </div>
             {vehicle.description && <p className="text-slate-500">{vehicle.description}</p>}
-            <dl className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px]">
+            <dl className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[0.75rem]">
               <dt className="text-slate-500">Seen</dt>
               <dd className="font-mono">t={vehicle.track[0].t_s.toFixed(1)}–{vehicle.track.at(-1).t_s.toFixed(1)}s</dd>
               <dt className="text-slate-500">Now ({time.toFixed(1)}s)</dt>
@@ -110,7 +110,7 @@ export default function ReconstructionTrace({ data, time, selected, onSelect, po
 
       <section className="rounded border border-slate-200 p-2.5">
         <h3 className="mb-1 font-semibold text-slate-700">Key moments <span className="font-normal text-slate-400">({moments.length})</span></h3>
-        {moments.length === 0 && <p className="text-[11px] text-slate-500">No timeline events or contradictions to jump to.</p>}
+        {moments.length === 0 && <p className="text-[0.75rem] text-slate-500">No timeline events or contradictions to jump to.</p>}
         <ul className="max-h-56 space-y-0.5 overflow-y-auto">
           {moments.map((m) => (
             <li key={m.id}>
@@ -120,7 +120,7 @@ export default function ReconstructionTrace({ data, time, selected, onSelect, po
                 <span className="min-w-0">
                   <span className="font-mono text-slate-400">t={m.t.toFixed(1)}s </span>
                   <span className="text-slate-700">{m.label}</span>
-                  <span className="ml-1 text-[10px] uppercase text-slate-400">{m.kind === 'conflict' ? 'contradiction' : m.basis ?? ''}</span>
+                  <span className="ml-1 text-[0.7rem] uppercase text-slate-400">{m.kind === 'conflict' ? 'contradiction' : m.basis ?? ''}</span>
                 </span>
               </button>
             </li>
