@@ -65,7 +65,8 @@ def reconstruct_from_camera(observation_sets: list[ObservationSet], timeline: Ti
         vehicles.append(VehicleTrack(
             vehicle_id=o.attributes["track_id"], label=f"{o.attributes['track_id']} · view {view}",
             color=VIEW_COLORS[(view - 1) % len(VIEW_COLORS)],
-            description=f"moving, {o.attributes.get('direction', '')}, {speed}",
+            description=(f"AI-sighted vehicle, {o.attributes.get('direction', '')}; coarse, from the model's boxes" if o.attributes.get("source")
+                         else f"moving, {o.attributes.get('direction', '')}, {speed}"),
             track=track, source_observation_ids=[o.id]))
 
     for n, o in enumerate(stopped, start=1):
@@ -196,7 +197,8 @@ def reconstruct_schematic_from_camera(observation_sets: list[ObservationSet], ti
         vehicles.append(VehicleTrack(
             vehicle_id=o.attributes["track_id"], label=o.attributes["track_id"],
             color=VIEW_COLORS[(view - 1) % len(VIEW_COLORS)],
-            description=f"moving {o.attributes.get('direction', '')}; schematic position from camera view {view}",
+            description=(f"AI-sighted vehicle, {o.attributes.get('direction', '')}; schematic position from camera view {view}" if o.attributes.get("source")
+                         else f"moving {o.attributes.get('direction', '')}; schematic position from camera view {view}"),
             track=track, source_observation_ids=[o.id]))
     xs = [p.x_m for v in vehicles for p in v.track]
     ys = [p.y_m for v in vehicles for p in v.track]

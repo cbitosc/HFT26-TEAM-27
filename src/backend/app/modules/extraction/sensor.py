@@ -82,7 +82,9 @@ VEHICLE_NAME = re.compile(r"(^|_)(vehicle|unit|device|tracker|imei|car|truck|bus
 APPROACH_COLS = ("approach", "phase", "direction")
 STATE_COLS = ("state", "signal_state", "signal", "color", "colour")
 FRAME_COLS = ("source_frame_approx", "source_frame", "frame", "frame_index", "frame_no", "frame_number")
-FLOW_COL = re.compile(r"^(?P<view>.+?)_(?P<stat>mean|p95|max|median)_optical_flow")
+# `<view>_<stat>_optical_flow...` per camera view, or `<stat>_optical_flow...` for one whole-frame series
+FLOW_COL = re.compile(r"^(?:(?P<view>.+?)_)?(?P<stat>mean|p95|max|median)_optical_flow")
+WHOLE_FRAME = "whole_frame"
 
 SIGNAL_ALIASES = {"amber": "yellow", "orange": "yellow", "g": "green", "y": "yellow", "r": "red"}
 BRAKE_TRUE = {"1", "on", "true", "yes", "y", "t"}
@@ -387,7 +389,7 @@ def _flow_columns(cols: list[str]) -> dict[str, dict[str, str]]:
     views: dict[str, dict[str, str]] = {}
     for c in cols:
         if m := FLOW_COL.match(c):
-            views.setdefault(m["view"], {})[m["stat"]] = c
+            views.setdefault(m["view"] or WHOLE_FRAME, {})[m["stat"]] = c
     return views
 
 
@@ -403,6 +405,10 @@ def _extract_motion(df: pd.DataFrame, b: _Builder, views: dict[str, dict[str, st
     step = float(df["_t"].diff().median())
     b.warnings.append(f"{b.file}: timestamp_s read as seconds from the incident reference time "
                       f"(recording start assumed to be t=0; offset not verified).")
+    for c in df.columns:  # a file that says what its numbers are not (e.g. "not physical vehicle telemetry"): keep that
+        if str(c).startswith("measurement_scope") or str(c) == "scope":
+            for note in df[c].astype(str).str.strip().replace("", pd.NA).dropna().unique()[:2]:
+                b.warnings.append(f"{b.file}: the file describes its values as: {note}.")
     spikes = []  # (t, view, emit) so ids are numbered in time order
     for view, stats in sorted(views.items()):
         col = stats.get("p95") or stats.get("max") or stats.get("mean") or next(iter(stats.values()))
@@ -417,22 +423,33 @@ def _extract_motion(df: pd.DataFrame, b: _Builder, views: dict[str, dict[str, st
         if len(valid) < 5:
             b.warnings.append(f"{b.file}: {view} has too few flow samples to judge spikes.")
             continue
-        med = float(valid.median())
-        mad = float((valid - med).abs().median()) * 1.4826
-        if mad <= 0:
-            continue
-        mean_col = stats.get("mean")
-        for i in valid.index:
-            z = (vals[i] - med) / mad
-            if z < FLOW_SPIKE_Z or vals[i] < FLOW_SPIKE_RATIO * med:
+        # Test every statistic the file has, the preferred one first: a crash can show in the mean flow
+        # (many things moving) without the 95th percentile (one fast patch) standing out, or the other way round.
+        order = [stats[k] for k in ("p95", "max", "mean") if k in stats] + [c for c in stats.values() if c not in (stats.get("p95"), stats.get("max"), stats.get("mean"))]
+        found: dict = {}  # row index -> (z, column, median) of the first statistic that spikes there
+        for cand in order:
+            cvals = pd.to_numeric(df[cand], errors="coerce")
+            cvalid = cvals.dropna()
+            if len(cvalid) < 5:
                 continue
+            cmed = float(cvalid.median())
+            cmad = float((cvalid - cmed).abs().median()) * 1.4826
+            if cmad <= 0:
+                continue
+            for i in cvalid.index:
+                z = (cvals[i] - cmed) / cmad
+                if z >= FLOW_SPIKE_Z and cvals[i] >= FLOW_SPIKE_RATIO * cmed and i not in found:
+                    found[i] = (z, cand, cmed, cvals)
+        mean_col = stats.get("mean")
+        for i, (z, col, med, cvals) in found.items():
             rec = df.loc[i]
-            spikes.append((float(rec["_t"]), view, lambda i=i, rec=rec, z=z, view=view, col=col, med=med, mean_col=mean_col: b.add(
+            spikes.append((float(rec["_t"]), view, lambda i=i, rec=rec, z=z, view=view, col=col, med=med, cvals=cvals, mean_col=mean_col: b.add(
                   b.next_id("sen_motion"), _row_locator(int(rec["_row"])), rec["_ts"], float(rec["_t"]),
                   "motion_spike",
-                  attributes={"view": int(m.group(1)) if (m := re.fullmatch(r"view_?(\d+)", view)) else view,
+                  attributes={"view": int(m.group(1)) if (m := re.fullmatch(r"view_?(\d+)", view)) else view.replace("_", " "),
                               "flow_stat": col.split("_optical_flow")[0].rsplit("_", 1)[-1],
-                              "flow_px_per_frame": _round(vals[i]),
+                              "flow_px_per_frame": _round(cvals[i]),
+                              "flow_unit": col.split("_optical_flow_", 1)[-1].replace("_", " ") if "_optical_flow_" in col else "px per frame",
                               "mean_flow_px_per_frame": _round(pd.to_numeric(rec[mean_col], errors="coerce")) if mean_col else None,
                               "view_median_px_per_frame": _round(med), "robust_z": _round(z, 1)},
                   confidence=round(min(0.8, 0.3 + 0.1 * z), 2), uncertainty=step / 2 if step else 0.5)))
@@ -578,7 +595,9 @@ def _expected_columns(cols: list[str], df: pd.DataFrame) -> dict:
     speed = next((c for c in cols if re.search(r"(^|_)(speed|velocity|spd|kmh|kph|mph)($|_)", c)), None)
     time_col = time_column(df)
     found = {"timestamp": time_col[0] if time_col else None, "speed": speed}
-    notes = [] if speed else ["no speed column: speeds will not be reported from this file (positions and events still are)"]
+    # Only telemetry is expected to carry speed; a signal log, flow series or frame index never does.
+    expects_speed = classify_columns(cols, df) == "vehicle_track"
+    notes = ["no speed column: speeds will not be reported from this file (positions and events still are)"] if expects_speed and not speed else []
     return {"columns_found": found, "upload_warnings": notes}
 
 

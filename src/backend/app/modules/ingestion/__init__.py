@@ -215,6 +215,7 @@ def analyze_video(evidence: Evidence, client: VisionClient | None = None,
 
     analysed = [(f, a) for f, a, _ in results if a is not None]
     persistence: dict = {}
+    raw = analysed  # every sighting as the model gave it; aggregation below keeps only what the pixels confirm
     if mode == "fixed":
         analysed, persistence, dropped = aggregate_fixed(
             analysed, lambda checks: static_regions(evidence.stored_path, info, checks))
@@ -224,9 +225,15 @@ def analyze_video(evidence: Evidence, client: VisionClient | None = None,
         if dropped["transient"]:
             warnings.append(f"{dropped['transient']} momentary claim(s) (braking, lane changes, swerves) dropped: "
                             "they can't be judged reliably from keyframes seconds apart.")
-    observations = frames_to_observations(evidence, info, analysed, mode, persistence) + track_obs + ego_obs
+    observations = frames_to_observations(evidence, info, analysed, mode, persistence, raw=raw) + track_obs + ego_obs
     if mode == "dashcam":
         observations += box_tracks(evidence, info, analysed)
+    elif mode == "fixed" and len(views) == 1 and len(track_obs) < FEW_MOTION_TRACKS:
+        boxed = box_tracks(evidence, info, raw, fixed=True, existing=track_obs)
+        if boxed:
+            observations += boxed
+            warnings.append(f"Motion tracking found only {len(track_obs)} vehicle(s), so {len(boxed)} more coarse track(s) "
+                            "were linked from the vision model's vehicle boxes (inferred; keyframes are seconds apart).")
     return ObservationSet(
         source_type=SourceType.video,
         evidence_id=evidence.id,
@@ -254,16 +261,25 @@ def ego_to_observations(evidence: Evidence, info: VideoInfo, events: list[dict])
     return out
 
 
+# "collided", "crashed into", "hit by", "struck"; but not a crash barrier / cushion
+COLLISION_WORDS = re.compile(r"\b(collid\w*|crash(?:ed|es|ing)?(?!\s+(?:barrier|cushion|attenuator|test))|hit by|struck|smash(?:ed|es)|rear-ended)\b")
+FEW_MOTION_TRACKS = 3     # fewer motion tracks than this in a one-view scene: add the model's boxes as tracks
+BOX_DUPLICATE_PX = 150.0  # a box track this close (and in time) to a motion track is the same vehicle
+
+
 def box_tracks(evidence: Evidence, info: VideoInfo, analysed: list[tuple[Frame, FrameAnalysis]],
-               max_jump: float = 180.0, max_gap_s: float = 3.0) -> list[Observation]:
-    """Dashcams: link the vision model's boxes for the same-looking vehicle across keyframes into coarse
-    image-space tracks (camera-relative: the camera itself moves). Basis "inferred": the boxes are a model's."""
+               max_jump: float = 180.0, max_gap_s: float = 3.0, fixed: bool = False,
+               existing: list[Observation] | None = None) -> list[Observation]:
+    """Link the vision model's boxes for the same-looking vehicle across keyframes into coarse image-space tracks.
+    Dashcams: camera-relative (the camera itself moves). Fixed cameras: absolute image positions (the box's bottom
+    centre, where the vehicle meets the road), used when motion tracking found few vehicles, skipping boxes that
+    duplicate a motion track in `existing`. Basis "inferred": the boxes are a model's, keyframes seconds apart."""
     tracks: list[dict] = []
     for frame, a in sorted(analysed, key=lambda fa: fa[0].t_s):
         for v in a.vehicles:
             if not v.box or v.confidence < MIN_CONFIDENCE:
                 continue
-            cx, cy = (v.box[0] + v.box[2]) / 2, (v.box[1] + v.box[3]) / 2
+            cx, cy = (v.box[0] + v.box[2]) / 2, (v.box[3] if fixed else (v.box[1] + v.box[3]) / 2)
             best = min((tr for tr in tracks if tr["key"] == _key(v.label) and frame.t_s - tr["pts"][-1][0] <= max_gap_s
                         and math.hypot(cx - tr["pts"][-1][1], cy - tr["pts"][-1][2]) <= max_jump),
                        key=lambda tr: math.hypot(cx - tr["pts"][-1][1], cy - tr["pts"][-1][2]), default=None)
@@ -272,21 +288,37 @@ def box_tracks(evidence: Evidence, info: VideoInfo, analysed: list[tuple[Frame, 
                 tracks.append(best)
             best["pts"].append((frame.t_s, cx, cy))
             best["last"] = frame.index
+            best["direction"] = v.direction or best.get("direction")
+    known = [(p[0], p[1], p[2]) for o in existing or [] if o.action == "track" for p in o.attributes.get("points", [])]
+
+    def duplicate(pts) -> bool:
+        near = sum(any(abs(t - kt) <= 0.6 and math.hypot(x - kx, y - ky) <= BOX_DUPLICATE_PX for kt, kx, ky in known)
+                   for t, x, y in pts)
+        return bool(known) and near >= max(1, len(pts) / 2)
+
     out = []
-    for n, tr in enumerate((tr for tr in tracks if len(tr["pts"]) >= 2), start=1):
-        pts = [[round(t + T0_OFFSET_S, 3), round(x / 1000 * info.width, 1), round(y / 1000 * info.height, 1)]
-               for t, x, y in tr["pts"]]
+    kept = []
+    for tr in tracks:
+        if len(tr["pts"]) < 2:
+            continue
+        pts_px = [[round(t + T0_OFFSET_S, 3), round(x / 1000 * info.width, 1), round(y / 1000 * info.height, 1)]
+                  for t, x, y in tr["pts"]]
+        if fixed and duplicate(pts_px):
+            continue
+        kept.append((tr, pts_px))
+    for n, (tr, pts) in enumerate(kept, start=1):
         out.append(Observation(
             id=f"vid_{evidence.id}_box_{n:03d}", source_type=SourceType.video,
             source_ref=SourceRef(evidence_id=evidence.id, file=evidence.filename,
                                  locator=f"frames:{tr['first']}-{tr['last']}"),
             timestamp=config.INCIDENT_REFERENCE_TIME + timedelta(seconds=pts[0][0]), t_rel_s=pts[0][0],
             time_uncertainty_s=0.5, vehicle_description=tr["label"], action="track", basis="inferred",
-            attributes={"track_id": f"T1-{n:03d}", "view": 1, "camera": "dashcam", "units": "px",
-                        "frame_size": [info.width, info.height], "fps": round(info.fps, 3),
+            attributes={"track_id": f"{'B' if fixed else 'T'}1-{n:03d}", "view": 1, "camera": "fixed" if fixed else "dashcam",
+                        "units": "px", "frame_size": [info.width, info.height], "fps": round(info.fps, 3),
                         "view_box": [0, 0, info.width, info.height], "grid": [[0, 0, info.width, info.height]],
-                        "label": tr["label"], "points": pts},
-            confidence=0.5))
+                        "label": tr["label"], "points": pts, "source": "AI vehicle boxes linked across keyframes",
+                        **({"direction": tr["direction"]} if tr.get("direction") else {})},
+            confidence=0.5 if not fixed else 0.35))
     return out
 
 
@@ -438,9 +470,12 @@ def _key(text: str | None) -> str:
 
 def frames_to_observations(
     evidence: Evidence, info: VideoInfo, analysed: list[tuple[Frame, FrameAnalysis]], mode: CameraMode = "dashcam",
-    persistence: dict | None = None,
+    persistence: dict | None = None, raw: list[tuple[Frame, FrameAnalysis]] | None = None,
 ) -> list[Observation]:
     """Collapse per-frame findings into state changes; one Observation per change.
+
+    `raw` is the same frames before fixed-camera filtering. Whether a vehicle is described as having collided does not
+    depend on it being a confirmed-stopped vehicle, so that search uses the unfiltered sightings.
 
     Fixed mode: no ego vehicle (an "ego" answer is ignored), signals tied to an "ego lane" are
     dropped, plain "moving" traffic is not reported, and every observation carries its camera view.
@@ -450,17 +485,22 @@ def frames_to_observations(
     uncertainty = round(max(1.0 / SAMPLE_FPS, 1.0 / info.fps) / 2, 3)
     last_state: dict[tuple[str, str], str] = {}
     collision_seen = False
+    gap_s = 0.0  # time since the previous analysed keyframe: the change happened somewhere in that gap
     out: list[Observation] = []
 
-    def emit(frame: Frame, action: str, confidence: float, *, vehicle_id=None, description=None, attributes=None) -> None:
+    def emit(frame: Frame, action: str, confidence: float, *, vehicle_id=None, description=None, attributes=None,
+             at_or_before: bool = False) -> None:
         t_rel = round(frame.t_s + T0_OFFSET_S, 3)
+        # Keyframes are picked adaptively and can be far apart, so the nominal rate understates the doubt. A claim of
+        # something already visible ("a collision happened") may have happened any time since the last keyframe.
+        spread = round(max(uncertainty, gap_s if at_or_before else gap_s / 2), 3)
         out.append(Observation(
             id=f"vid_{evidence.id}_{len(out) + 1:03d}",
             source_type=SourceType.video,
             source_ref=SourceRef(evidence_id=evidence.id, file=evidence.filename, locator=f"frame:{frame.index}"),
             timestamp=config.INCIDENT_REFERENCE_TIME + timedelta(seconds=t_rel),
             t_rel_s=t_rel,
-            time_uncertainty_s=uncertainty,
+            time_uncertainty_s=spread,
             vehicle_id=vehicle_id,
             vehicle_description=description,
             action=action,
@@ -481,7 +521,11 @@ def frames_to_observations(
                 attrs["view"] = view
         return attrs
 
+    raw_by_index = {f.index: a for f, a in raw or []}
+    prev_t: float | None = None
     for frame, a in sorted(analysed, key=lambda fa: fa[0].index):
+        gap_s = 0.0 if prev_t is None else frame.t_s - prev_t
+        prev_t = frame.t_s
         # Fixed cameras: a signal only counts if the model confirmed it can see a light head.
         for s in (a.signals if not fixed or a.signal_heads_visible else []):
             if s.state == "unknown" or s.confidence < MIN_CONFIDENCE:
@@ -537,5 +581,16 @@ def frames_to_observations(
             attrs = {"vehicles": vehicles}
             if c.impact:
                 attrs["impact_side"] = c.impact
-            emit(frame, "collision", c.confidence, attributes=with_view(attrs, c.view))
+            attrs["timing"] = "first keyframe where the AI reports a collision; it happened at or before this time"
+            emit(frame, "collision", c.confidence, attributes=with_view(attrs, c.view), at_or_before=True)
+        if not collision_seen:  # the dedicated field can lag: a vehicle described as having collided is evidence too
+            for v in raw_by_index.get(frame.index, a).vehicles:
+                if v.confidence >= MIN_CONFIDENCE and COLLISION_WORDS.search((v.description or "").lower()):
+                    collision_seen = True
+                    emit(frame, "collision", round(0.7 * v.confidence, 3), at_or_before=True, attributes=with_view({
+                        "vehicles": [v.label], "label": v.label,
+                        **({"box": v.box, "frame_size": [info.width, info.height]} if v.box else {}),
+                        "timing": "first keyframe where a vehicle is described as having collided; it happened at or before this time",
+                        "reported_in": f"vehicle description: {v.description}"}, v.view))
+                    break
     return out
