@@ -36,6 +36,7 @@ from .video import (MOVING_CAMERA_SHARE, Frame, Track, VideoInfo, camera_motion_
                     ego_motion, encode_jpeg_b64, extract_frames, probe_video, select_keyframes, static_regions,
                     track_vehicles, with_followers)
 from . import calibration
+from .linking import Sight, histogram, kind_of, link_sightings
 from .road_geometry import estimate_vanishing_point, traffic_agrees
 from .vision import PROMPTS, CameraMode, FrameAnalysis, VisionClient, VisionError
 
@@ -273,16 +274,22 @@ BOX_DUPLICATE_PX = 150.0  # a box track this close (and in time) to a motion tra
 def box_tracks(evidence: Evidence, info: VideoInfo, analysed: list[tuple[Frame, FrameAnalysis]],
                max_jump: float = 180.0, max_gap_s: float = 3.0, fixed: bool = False,
                existing: list[Observation] | None = None, road: dict | None = None) -> list[Observation]:
-    """Link the vision model's boxes for the same-looking vehicle across keyframes into coarse image-space tracks.
-    Dashcams: camera-relative (the camera itself moves). Fixed cameras: absolute image positions (the box's bottom
-    centre, where the vehicle meets the road), used when motion tracking found few vehicles, skipping boxes that
-    duplicate a motion track in `existing`. Basis "inferred": the boxes are a model's, keyframes seconds apart."""
+    """Link the vision model's boxes across keyframes into coarse image-space tracks, basis "inferred" (the boxes are a
+    model's and keyframes are seconds apart).
+
+    Fixed cameras (`fixed=True`): absolute image positions, the box's bottom centre where the vehicle meets the road,
+    linked by position, size, colour and label together with the road's direction (linking.py), used when motion
+    tracking found few vehicles; boxes that duplicate a motion track in `existing` are skipped.
+    Dashcams: camera-relative (the camera itself moves), linked by the same-looking label alone.
+    """
+    if fixed:
+        return _fixed_box_tracks(evidence, info, analysed, existing or [], road)
     tracks: list[dict] = []
     for frame, a in sorted(analysed, key=lambda fa: fa[0].t_s):
         for v in a.vehicles:
             if not v.box or v.confidence < MIN_CONFIDENCE:
                 continue
-            cx, cy = (v.box[0] + v.box[2]) / 2, (v.box[3] if fixed else (v.box[1] + v.box[3]) / 2)
+            cx, cy = (v.box[0] + v.box[2]) / 2, (v.box[1] + v.box[3]) / 2
             best = min((tr for tr in tracks if tr["key"] == _key(v.label) and frame.t_s - tr["pts"][-1][0] <= max_gap_s
                         and math.hypot(cx - tr["pts"][-1][1], cy - tr["pts"][-1][2]) <= max_jump),
                        key=lambda tr: math.hypot(cx - tr["pts"][-1][1], cy - tr["pts"][-1][2]), default=None)
@@ -291,8 +298,39 @@ def box_tracks(evidence: Evidence, info: VideoInfo, analysed: list[tuple[Frame, 
                 tracks.append(best)
             best["pts"].append((frame.t_s, cx, cy))
             best["last"] = frame.index
-            best["direction"] = v.direction or best.get("direction")
-    known = [(p[0], p[1], p[2]) for o in existing or [] if o.action == "track" for p in o.attributes.get("points", [])]
+    out = []
+    for n, tr in enumerate((tr for tr in tracks if len(tr["pts"]) >= 2), start=1):
+        pts = [[round(t + T0_OFFSET_S, 3), round(x / 1000 * info.width, 1), round(y / 1000 * info.height, 1)]
+               for t, x, y in tr["pts"]]
+        out.append(Observation(
+            id=f"vid_{evidence.id}_box_{n:03d}", source_type=SourceType.video,
+            source_ref=SourceRef(evidence_id=evidence.id, file=evidence.filename,
+                                 locator=f"frames:{tr['first']}-{tr['last']}"),
+            timestamp=config.INCIDENT_REFERENCE_TIME + timedelta(seconds=pts[0][0]), t_rel_s=pts[0][0],
+            time_uncertainty_s=0.5, vehicle_description=tr["label"], action="track", basis="inferred",
+            attributes={"track_id": f"T1-{n:03d}", "view": 1, "camera": "dashcam", "units": "px",
+                        "frame_size": [info.width, info.height], "fps": round(info.fps, 3),
+                        "view_box": [0, 0, info.width, info.height], "grid": [[0, 0, info.width, info.height]],
+                        "label": tr["label"], "points": pts, "source": "AI vehicle boxes linked across keyframes"},
+            confidence=0.5))
+    return out
+
+
+def _fixed_box_tracks(evidence: Evidence, info: VideoInfo, analysed: list[tuple[Frame, FrameAnalysis]],
+                      existing: list[Observation], road: dict | None) -> list[Observation]:
+    """One track per vehicle the model saw in at least two keyframes of a fixed camera (see linking.py)."""
+    frames = []
+    for frame, a in sorted(analysed, key=lambda fa: fa[0].t_s):
+        sights = []
+        for v in a.vehicles:
+            if not v.box or v.confidence < MIN_CONFIDENCE or kind_of(v.label) == "person":
+                continue  # a pedestrian is not a vehicle track
+            box = (v.box[0] / 1000 * info.width, v.box[1] / 1000 * info.height,
+                   v.box[2] / 1000 * info.width, v.box[3] / 1000 * info.height)
+            sights.append(Sight(frame.t_s, v.label, box, v.confidence, histogram(frame.image, box), frame.index, v.direction))
+        frames.append((frame.t_s, sights))
+    vp = tuple(road["vanishing_point_px"]) if road and road.get("vanishing_point_px") else None
+    known = [(p[0], p[1], p[2]) for o in existing if o.action == "track" for p in o.attributes.get("points", [])]
 
     def duplicate(pts) -> bool:
         near = sum(any(abs(t - kt) <= 0.6 and math.hypot(x - kx, y - ky) <= BOX_DUPLICATE_PX for kt, kx, ky in known)
@@ -300,28 +338,28 @@ def box_tracks(evidence: Evidence, info: VideoInfo, analysed: list[tuple[Frame, 
         return bool(known) and near >= max(1, len(pts) / 2)
 
     out = []
-    kept = []
-    for tr in tracks:
-        if len(tr["pts"]) < 2:
+    for tr in (t for t in link_sightings(frames, info.width, vp) if len(t.sights) >= 2):
+        pts = [[round(s.t + T0_OFFSET_S, 3), round(s.contact[0], 1), round(s.contact[1], 1)] for s in tr.sights]
+        if duplicate(pts):
             continue
-        pts_px = [[round(t + T0_OFFSET_S, 3), round(x / 1000 * info.width, 1), round(y / 1000 * info.height, 1)]
-                  for t, x, y in tr["pts"]]
-        if fixed and duplicate(pts_px):
-            continue
-        kept.append((tr, pts_px))
-    for n, (tr, pts) in enumerate(kept, start=1):
+        n = len(out) + 1
+        labels: dict[str, int] = {}
+        for s in tr.sights:
+            labels[s.label] = labels.get(s.label, 0) + 1
+        direction = next((s.direction for s in reversed(tr.sights) if s.direction), None)
         out.append(Observation(
             id=f"vid_{evidence.id}_box_{n:03d}", source_type=SourceType.video,
             source_ref=SourceRef(evidence_id=evidence.id, file=evidence.filename,
-                                 locator=f"frames:{tr['first']}-{tr['last']}"),
+                                 locator=f"frames:{tr.sights[0].index}-{tr.sights[-1].index}"),
             timestamp=config.INCIDENT_REFERENCE_TIME + timedelta(seconds=pts[0][0]), t_rel_s=pts[0][0],
-            time_uncertainty_s=0.5, vehicle_description=tr["label"], action="track", basis="inferred",
-            attributes={"track_id": f"{'B' if fixed else 'T'}1-{n:03d}", "view": 1, "camera": "fixed" if fixed else "dashcam",
-                        "units": "px", "frame_size": [info.width, info.height], "fps": round(info.fps, 3),
+            time_uncertainty_s=0.5, vehicle_description=tr.label, action="track", basis="inferred",
+            attributes={"track_id": f"B1-{n:03d}", "view": 1, "camera": "fixed", "units": "px",
+                        "frame_size": [info.width, info.height], "fps": round(info.fps, 3),
                         "view_box": [0, 0, info.width, info.height], "grid": [[0, 0, info.width, info.height]],
-                        "label": tr["label"], "points": pts, "source": "AI vehicle boxes linked across keyframes",
-                        **({"direction": tr["direction"]} if tr.get("direction") else {}), **(road or {})},
-            confidence=0.5 if not fixed else 0.35))
+                        "label": tr.label, "labels": dict(sorted(labels.items(), key=lambda kv: -kv[1])), "points": pts,
+                        "sightings": len(tr.sights), "source": "AI vehicle boxes linked across keyframes",
+                        **({"direction": direction} if direction else {}), **(road or {})},
+            confidence=round(min(0.45, 0.3 + 0.04 * len(tr.sights)), 2)))
     return out
 
 
