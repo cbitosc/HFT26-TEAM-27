@@ -140,7 +140,7 @@ export default function ReconstructionTrace({ data, time, selected, onSelect, po
         <p className="mt-2 text-[0.75rem] leading-snug text-slate-500">
           {schematic
             ? 'Only who moved where relative to whom, and in what order, is supported. Distances, speeds and any impact point are not.'
-            : 'Solid line = positions at real samples; dashed = filled in between. A map is a reconstruction of what may have happened, not a legal finding.'}
+            : 'Solid line = actual path from real samples; dotted = inferred, filled in between. A map is a reconstruction of what may have happened, not a legal finding.'}
         </p>
       </section>
 

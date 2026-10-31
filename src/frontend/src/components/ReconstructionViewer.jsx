@@ -210,6 +210,9 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
   const fs = 2.2 * s
   const half = L // two lanes per road -> half-width = one lane width each side
   const openHere = (conflicts?.conflicts ?? []).filter((c) => c.t_range_s && time >= c.t_range_s[0] - 0.5 && time <= c.t_range_s[1] + 0.5)
+  // Actual (observed) paths are solid lines; inferred and still-to-come paths are dotted.
+  const dotW = 0.6 * Math.max(s, 0.4)
+  const dotted = `0 ${2.2 * dotW}`
   const showCollision = data.collision && time >= data.collision.t_s - 1e-6
 
   // Observed = read from a sensor sample or tracked in video. Everything else (interpolated, extrapolated,
@@ -316,8 +319,11 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
             return (
               <g key={v.vehicle_id} onClick={() => setSelected(selected === v.vehicle_id ? null : v.vehicle_id)}
                 style={{ cursor: 'pointer' }} opacity={selected && selected !== v.vehicle_id ? 0.35 : 1}>
-                {(!schematic || selected === v.vehicle_id) && <polyline points={v.track.map((q) => `${q.x_m},${q.y_m}`).join(' ')}
-                  fill="none" stroke={v.color} strokeWidth={0.25 * Math.max(s, 0.4)} strokeOpacity={selected === v.vehicle_id ? 0.4 : 0.15} />}
+                {(!schematic || selected === v.vehicle_id) && (
+                  <polyline points={[p, ...v.track.filter((q) => q.t_s > time)].map((q) => `${q.x_m},${q.y_m}`).join(' ')}
+                    fill="none" stroke={v.color} strokeWidth={dotW} strokeLinecap="round" strokeDasharray={dotted}
+                    strokeOpacity={selected === v.vehicle_id ? 0.7 : 0.5} />
+                )}
                 {pts.slice(1).map((b, i) => {
                   const a = pts[i]
                   // the last segment ends at the vehicle, inside the grid step that ends at nextPoint
@@ -325,8 +331,8 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
                   const solid = obsPoint(v.vehicle_id, a) && obsPoint(v.vehicle_id, end)
                   return (
                     <line key={i} x1={a.x_m} y1={a.y_m} x2={b.x_m} y2={b.y_m} stroke={v.color}
-                      strokeWidth={0.5 * Math.max(s, 0.4)} strokeOpacity={0.7}
-                      strokeDasharray={solid ? undefined : `${1.2 * s} ${0.9 * s}`} />
+                      strokeWidth={solid ? 0.5 * Math.max(s, 0.4) : dotW} strokeOpacity={solid ? 0.85 : 0.9}
+                      strokeLinecap={solid ? undefined : 'round'} strokeDasharray={solid ? undefined : dotted} />
                   )
                 })}
                 {past.filter((q) => obsPoint(v.vehicle_id, q)).map((q) => (
@@ -409,12 +415,12 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
         <div className="flex items-start gap-2">
           <svg width="30" height="14" className="mt-0.5 shrink-0"><line x1="0" y1="7" x2="30" y2="7" stroke="var(--color-slate-700)" strokeWidth="2.5" /><circle cx="15" cy="7" r="3.5" fill="var(--color-slate-700)" stroke="var(--color-white)" /></svg>
           <span><b className="text-emerald-700">Observed</b>
-            <span className="text-slate-500"> · read from a sensor sample or tracked in video. Solid line, filled dot, solid vehicle.</span></span>
+            <span className="text-slate-500"> · read from a sensor sample or tracked in video. Actual path: solid line, filled dot, solid vehicle.</span></span>
         </div>
         <div className="flex items-start gap-2">
-          <svg width="30" height="14" className="mt-0.5 shrink-0"><line x1="0" y1="7" x2="30" y2="7" stroke="var(--color-slate-700)" strokeWidth="2.5" strokeDasharray="5 4" /><circle cx="15" cy="7" r="3.5" fill="var(--color-white)" stroke="var(--color-slate-700)" strokeWidth="1.5" /></svg>
+          <svg width="30" height="14" className="mt-0.5 shrink-0"><line x1="0" y1="7" x2="30" y2="7" stroke="var(--color-slate-700)" strokeWidth="3" strokeLinecap="round" strokeDasharray="0 6" /><circle cx="15" cy="7" r="3.5" fill="var(--color-white)" stroke="var(--color-slate-700)" strokeWidth="1.5" /></svg>
           <span><b className="text-violet-700">Inferred</b>
-            <span className="text-slate-500"> · filled in between or beyond samples, or assumed. Dashed line, hollow dot, faded vehicle.</span></span>
+            <span className="text-slate-500"> · filled in between or beyond samples, or assumed. Dotted line, hollow dot, faded vehicle. The faint dotted line ahead of a vehicle is the path it has still to take.</span></span>
         </div>
         {data.collision && (
           <div className="flex items-start gap-2 sm:col-span-2">

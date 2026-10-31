@@ -645,3 +645,12 @@ Schema 1.3.1 -> 1.3.2, additive: `Evidence.ref`, `Observation.evidence_ref`. JSO
 **Gap 7: uncertainty on the dashboard.** A permanent bar under the header on every tab: "Evidence-supported reconstruction, not a legal finding", what confidence means, and the count of unresolved contradictions/gaps (links to the explorer). Timeline: confidence chip (coloured) on every event, ⚠ flag on events touched by an open contradiction or gap (by shared observation, or time overlap for short events), summary banner. Contradiction Explorer: sorted by severity, each item badged "unresolved". Reconstruction: confidence in map labels (vehicles, inferred impact) and an "Open at t=…" banner when the replay time is inside a contradiction or gap.
 
 Tests: `tests/test_evidence_gaps.py` (11): per-kind endpoints, validation reasons, nothing rejected is stored, EVID numbering and no reuse, legacy backfill, readable refs incl. rows 14-15, witness line ref, positions carry basis + observation ids that exist, filled-in points cite the gap, demo = simulated, camera tracks = video. `pytest` 159 passed. Checked in the browser (isolated backend with the demo sensor files): statement bar, flags, banner at t=6.5 s, refs in evidence lists, confidence labels.
+
+## 2026-10-31 · Reconstruction: actual path solid, inferred / predicted path dotted
+
+Request: show the inferred (predicted) car paths as dotted lines and the actual path as a solid line. Frontend only (`ReconstructionViewer.jsx`, legend and caption text in `ReconstructionTrace.jsx`).
+- **Actual path** (travelled so far, observed points): solid line.
+- **Inferred path** (travelled stretches filled in between or beyond samples, or assumed): round-dotted line, with hollow dots on the selected vehicle.
+- **Path ahead** (the rest of the track from the vehicle's current position): faint dotted line, so a solid line always means "where it really was". Shown for every vehicle on a metric map, and for the selected vehicle on a schematic plan.
+- Legend and "how far to trust" caption reworded to match (solid = actual, dotted = inferred / still to come).
+Checked in an isolated backend (demo sensor files): V1's telemetry dropout shows dotted between solid stretches; path ahead dotted. Build OK.
