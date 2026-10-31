@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import CameraTrajectories from './CameraTrajectories'
 import Panel from './Panel'
+import ReconstructionTrace from './ReconstructionTrace'
 
 const SIGNAL_COLORS = { red: '#dc2626', yellow: '#eab308', green: '#16a34a' }
 // Inbound lanes (left-hand traffic): where each approach's stop line and signal head sit, in lane widths.
@@ -31,6 +32,8 @@ function positionAt(track, t) {
         y_m: a.y_m + (b.y_m - a.y_m) * k,
         heading_deg: a.heading_deg + dh * k,
         speed_kmh: a.speed_kmh != null && b.speed_kmh != null ? a.speed_kmh + (b.speed_kmh - a.speed_kmh) * k : null,
+        source: k < 0.5 ? a.source : b.source,
+        confidence: a.confidence != null && b.confidence != null ? Math.min(a.confidence, b.confidence) : a.confidence ?? b.confidence,
       }
     }
   }
@@ -91,8 +94,10 @@ function layoutLabels(items, fontSize) {
   return placed
 }
 
-export default function ReconstructionViewer({ data, time, onTimeChange }) {
+export default function ReconstructionViewer({ data, time, onTimeChange, timeline, conflicts, observationsById = {}, onFocus }) {
   const [playing, setPlaying] = useState(false)
+  const [selected, setSelected] = useState(null)
+  useEffect(() => { setSelected(null) }, [data])
   const [zoom, setZoom] = useState('auto')
   const [rate, setRate] = useState(1)
   const rateRef = useRef(1)
@@ -137,6 +142,19 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
     return { measured, signals: signalPhases(observations ?? []), known: observations != null && observations.length > 0 }
   }, [data, observations])
 
+  // Timeline events and contradictions that fall inside the replay window, as jump targets.
+  const moments = useMemo(() => {
+    if (!data) return []
+    const out = []
+    for (const e of timeline?.events ?? []) {
+      out.push({ id: e.id, t: e.t_start_s, label: e.label, kind: e.category === 'collision' ? 'collision' : 'event', basis: e.basis, observationIds: e.observation_ids })
+    }
+    for (const c of conflicts?.conflicts ?? []) {
+      if (c.t_range_s) out.push({ id: c.id, t: c.t_range_s[0], label: c.title, kind: 'conflict', observationIds: c.observation_ids })
+    }
+    return out.filter((m) => m.t >= data.t_min_s - 1e-6 && m.t <= data.t_max_s + 1e-6).sort((a, b) => a.t - b.t)
+  }, [data, timeline, conflicts])
+
   if (!data) return <Panel title="Reconstruction">Loading…</Panel>
   if (data.scene.type === 'camera_image') {
     return <CameraTrajectories data={data} time={time} onTimeChange={onTimeChange} Panel={Panel} title="Reconstruction" />
@@ -157,14 +175,27 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
   const { extent_m: sceneE, lane_width_m: L = 3.5, roads } = data.scene
   // A declared junction is drawn with roads; a plain metric map shows only the evidence.
   const junction = data.scene.type !== 'metric'
-  const [cx, cy] = data.scene.center_m ?? [0, 0]
+  let [cx, cy] = data.scene.center_m ?? [0, 0]
+  let fitE = sceneE
+  if (data.scene.units === 'schematic') {
+    // No scene to anchor to: frame whatever the tracks cover.
+    const xs = data.vehicles.flatMap((v) => v.track.map((q) => q.x_m))
+    const ys = data.vehicles.flatMap((v) => v.track.map((q) => q.y_m))
+    cx = (Math.min(...xs) + Math.max(...xs)) / 2
+    cy = (Math.min(...ys) + Math.max(...ys)) / 2
+    fitE = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2 + 3
+  }
+  const roadBand = data.scene.units === 'schematic' ? {
+    x0: Math.min(...data.vehicles.flatMap((v) => v.track.map((q) => q.x_m))) - 2,
+    x1: Math.max(...data.vehicles.flatMap((v) => v.track.map((q) => q.x_m))) + 2,
+  } : null
   const R = 1.5 * sceneE // roads run past the scene edge so the auto view never shows them ending
   const schematic = data.scene.units === 'schematic'
   // Camera tracks exist only while the vehicle is seen; sensor tracks span the whole window.
   const visible = data.vehicles.filter((v) => !schematic || (time >= v.track[0].t_s - 0.3 && time <= v.track[v.track.length - 1].t_s + 0.3))
   const current = visible.map((v) => ({ v, p: positionAt(v.track, time) }))
   const E = !junction
-    ? sceneE
+    ? fitE
     : zoom === 'auto'
       ? Math.min(1.5 * sceneE, Math.max(ZOOMS.junction, ...current.map(({ p }) => Math.max(Math.abs(p.x_m), Math.abs(p.y_m)) + 8)))
       : ZOOMS[zoom] ?? sceneE
@@ -186,6 +217,11 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
     else if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1) }
     else if (e.key === ' ') { e.preventDefault(); togglePlay() }
   }
+
+  const seek = (t) => { setPlaying(false); onTimeChange(Math.min(data.t_max_s, Math.max(data.t_min_s, t))) }
+  const selectedVehicle = data.vehicles.find((v) => v.vehicle_id === selected)
+  const selectedPos = selectedVehicle && time >= selectedVehicle.track[0].t_s - 0.3 && time <= selectedVehicle.track.at(-1).t_s + 0.3
+    ? positionAt(selectedVehicle.track, time) : null
 
   const togglePlay = () => {
     if (!playing && time >= data.t_max_s) onTimeChange(data.t_min_s)
@@ -223,6 +259,8 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
           <b>Schematic estimate, not a measurement.</b> {data.note}
         </div>
       )}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_21rem]">
+      <div className="min-w-0">
       <svg viewBox={`${cx - E} ${-cy - E} ${2 * E} ${2 * E}`} className="mx-auto block aspect-square w-full max-w-xl rounded bg-lime-50">
         {/* World coordinates: +y is north, so flip the y axis. */}
         <g transform="scale(1,-1)">
@@ -250,6 +288,12 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
           })}
           </>}
 
+          {roadBand && (
+            <g>
+              <rect x={roadBand.x0} y={cy - E} width={roadBand.x1 - roadBand.x0} height={2 * E} fill="#cbd5e1" fillOpacity={0.55} />
+            </g>
+          )}
+
           {showCollision && (
             <g transform={`translate(${data.collision.x_m},${data.collision.y_m})`} opacity={0.85}>
               <circle r={2.2} fill="#fecaca" fillOpacity={0.5} stroke="#dc2626" strokeWidth={0.2} />
@@ -261,9 +305,10 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
             const past = v.track.filter((q) => q.t_s < time)
             const pts = [...past, p]
             return (
-              <g key={v.vehicle_id}>
-                {!schematic && <polyline points={v.track.map((q) => `${q.x_m},${q.y_m}`).join(' ')}
-                  fill="none" stroke={v.color} strokeWidth={0.25 * Math.max(s, 0.4)} strokeOpacity={0.15} />}
+              <g key={v.vehicle_id} onClick={() => setSelected(selected === v.vehicle_id ? null : v.vehicle_id)}
+                style={{ cursor: 'pointer' }} opacity={selected && selected !== v.vehicle_id ? 0.35 : 1}>
+                {(!schematic || selected === v.vehicle_id) && <polyline points={v.track.map((q) => `${q.x_m},${q.y_m}`).join(' ')}
+                  fill="none" stroke={v.color} strokeWidth={0.25 * Math.max(s, 0.4)} strokeOpacity={selected === v.vehicle_id ? 0.4 : 0.15} />}
                 {pts.slice(1).map((b, i) => {
                   const a = pts[i]
                   // the last segment ends at the vehicle, inside the grid step that ends at nextGridTime
@@ -279,6 +324,8 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
                   <circle key={q.t_s} cx={q.x_m} cy={q.y_m} r={0.5 * Math.max(s, 0.4)} fill={v.color} stroke="white" strokeWidth={0.1} />
                 ))}
                 <g transform={`translate(${p.x_m},${p.y_m}) rotate(${-p.heading_deg}) scale(${carScale})`}>
+                  {selected === v.vehicle_id && <circle r={3.2} fill="none" stroke="#0f172a" strokeWidth={0.2} strokeDasharray="0.6 0.5" />}
+                  {schematic && <ellipse rx={2.4} ry={3.4} fill={v.color} fillOpacity={0.12} />}
                   <rect x={-0.9} y={-2.25} width={1.8} height={4.5} rx={0.4} fill={v.color} stroke="#0f172a" strokeWidth={0.15} />
                   <rect x={-0.7} y={0.8} width={1.4} height={0.9} fill="#e2e8f0" />
                 </g>
@@ -291,6 +338,7 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
         {junction && <text x={half + 1 * s} y={-E + 4 * s} fontSize={2.5 * s} fill="#475569">{roads?.ns}</text>}
         {junction && <text x={-E + 1 * s} y={half + 3 * s} fontSize={2.5 * s} fill="#475569">{roads?.ew}</text>}
         <text x={cx - E + 1 * s} y={-cy + E - 2 * s} fontSize={2.5 * s} fill="#475569">N ↑</text>
+        {roadBand && <text x={cx - E + 1 * s} y={-cy - E + 3 * s} fontSize={2 * s} fill="#64748b">grey band: road extent assumed from where vehicles were seen</text>}
         {labels.map((l) => (
           <g key={l.key}>
             <line x1={l.ax} y1={l.ay} x2={l.side === 'left' ? l.x + l.w + 0.3 * fs : l.x - 0.3 * fs} y2={l.y - l.h * 0.45}
@@ -311,6 +359,10 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
         <div className="relative min-w-40 flex-1 basis-full sm:basis-0">
           <input type="range" min={data.t_min_s} max={data.t_max_s} step={0.1} value={time} aria-label="Time"
             onChange={(e) => { setPlaying(false); onTimeChange(Number(e.target.value)) }} className="w-full" />
+          {data.t_max_s > data.t_min_s && moments.map((m) => (
+            <span key={m.id} title={`t=${m.t}s ${m.label}`} className={`pointer-events-none absolute top-4 h-1.5 w-1.5 -translate-x-1/2 rounded-full ${m.kind === 'conflict' ? 'bg-amber-500' : 'bg-slate-400'}`}
+              style={{ left: `${((m.t - data.t_min_s) / (data.t_max_s - data.t_min_s)) * 100}%` }} />
+          ))}
           {data.collision && data.t_max_s > data.t_min_s && (
             <span title={`impact t=${data.collision.t_s}s`} className="pointer-events-none absolute top-5 -translate-x-1/2 text-[10px] leading-none text-red-600"
               style={{ left: `${((data.collision.t_s - data.t_min_s) / (data.t_max_s - data.t_min_s)) * 100}%` }}>▲ impact</span>
@@ -325,9 +377,10 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
       <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-600">
         {schematic && <span>{data.vehicles.length} tracks · {visible.length} visible at this time</span>}
         {(schematic ? visible.slice(0, 6) : data.vehicles).map((v) => (
-          <span key={v.vehicle_id} className="flex items-center gap-1">
+          <button key={v.vehicle_id} onClick={() => setSelected(selected === v.vehicle_id ? null : v.vehicle_id)}
+            className={`flex items-center gap-1 rounded px-1 ${selected === v.vehicle_id ? 'bg-slate-900 text-white' : 'hover:bg-slate-100'}`}>
             <span className="inline-block h-2 w-3 rounded-sm" style={{ background: v.color }} />{v.label}
-          </span>
+          </button>
         ))}
         {derived.known && (
           <span className="flex items-center gap-2 text-slate-500">
@@ -350,6 +403,10 @@ export default function ReconstructionViewer({ data, time, onTimeChange }) {
           ))}
         </div>
       )}
+      </div>
+      <ReconstructionTrace data={data} time={time} selected={selected} onSelect={setSelected} position={selectedPos}
+        moments={moments} observationsById={observationsById} onSeek={seek} schematic={schematic} onFocus={onFocus} />
+      </div>
     </Panel>
   )
 }

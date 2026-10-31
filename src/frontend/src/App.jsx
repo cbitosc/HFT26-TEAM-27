@@ -76,7 +76,8 @@ export default function App() {
           <ContradictionExplorer report={results?.conflicts} observationsById={observationsById} onFocus={focus} />
         </div>
         <div className="lg:col-span-3">
-          <ReconstructionViewer data={results?.reconstruction} time={time} onTimeChange={setTime} />
+          <ReconstructionViewer data={results?.reconstruction} time={time} onTimeChange={setTime} timeline={results?.timeline}
+            conflicts={results?.conflicts} observationsById={observationsById} onFocus={focus} />
         </div>
       </main>
     </div>

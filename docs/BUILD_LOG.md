@@ -565,3 +565,16 @@ Tests: schematic plan labelled / no speeds / depth order / none for a moving cam
 
 Limit: the horizon/field-of-view are assumptions, so the shape of the plan can be off; only the relative order and movement should be read from it.
 
+
+## 2026-10-31 · Reconstruction panel: evidence trace, confidence and key moments
+
+Why: the reconstruction is the core of the problem statement (traceable trajectory map, explicit confidence, observations vs inferences). The map showed positions but not what they were built from or how far to trust them.
+
+Frontend only (no contract change): new `ReconstructionTrace.jsx` beside the map (stacks below it on narrow screens).
+- **How far to trust this map:** mean point confidence with a bar, mix of point sources (measured / tracked / interpolated / estimated), and a plain statement of what the map does and does not support.
+- **Trace a vehicle:** click a car on the map or its legend chip; shows seen span, source and confidence at the current time, speed (or "not measurable"), mean confidence, source mix and the supporting observations (source, basis badge, confidence, file@locator, frame thumbnail). Others dim; the selected track draws in full.
+- **Key moments:** timeline events and contradictions inside the replay window as clickable jump targets (the current one is highlighted; dots on the slider). Clicking also highlights the evidence in the Timeline.
+- Schematic plan is framed on the tracks themselves with a labelled grey "road extent assumed from where vehicles were seen" band and a soft uncertainty halo around each car (was a blank green square).
+- `positionAt` now carries point source and confidence.
+
+Checked in the dashboard on the user's CCTV clip: select a vehicle, evidence list, key moments. `npm run build` OK.
