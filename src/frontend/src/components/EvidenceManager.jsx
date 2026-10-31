@@ -101,8 +101,9 @@ export default function EvidenceManager({ run, observations, onAnalysisDone, onR
           : <li className="text-xs text-slate-400">Results use only your evidence; stages that can't run are skipped.</li>}
         {evidence.map((e) => (
           <li key={e.id} className="flex min-w-0 items-center gap-2 text-sm">
+            {e.ref && <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[0.7rem] text-slate-600" title="evidence id">{e.ref}</span>}
             <SourceBadge type={e.kind} />
-            <span className="min-w-0 flex-1 truncate" title={e.filename}>{e.filename}</span>
+            <span className="min-w-0 flex-1 truncate" title={`${e.filename} · sha256 ${e.sha256 ?? 'n/a'}`}>{e.filename}</span>
             <span className="shrink-0 text-xs text-slate-400">{(e.size_bytes / 1024 / 1024).toFixed(1)} MB</span>
             <button onClick={() => remove(e.id)} disabled={running}
               className="shrink-0 text-xs text-slate-400 hover:text-red-600 disabled:opacity-40">remove</button>

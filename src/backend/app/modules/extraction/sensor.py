@@ -569,7 +569,17 @@ def inspect_csv(path: str, filename: str) -> dict:
     layout = classify_columns(cols, df)
     if layout is None:
         raise ValueError(unrecognised(filename, cols))
-    return {"layout": layout, "layout_name": LAYOUTS[layout], "rows": len(df), "columns": cols}
+    return {"layout": layout, "layout_name": LAYOUTS[layout], "rows": len(df), "columns": cols, **_expected_columns(cols, df)}
+
+
+def _expected_columns(cols: list[str], df: pd.DataFrame) -> dict:
+    """Which of the expected columns (a timestamp, a speed) the upload has. A time column is already required by
+    the layout check; a missing speed is a warning, not an error, since signal logs and position-only GPS are valid."""
+    speed = next((c for c in cols if re.search(r"(^|_)(speed|velocity|spd|kmh|kph|mph)($|_)", c)), None)
+    time_col = time_column(df)
+    found = {"timestamp": time_col[0] if time_col else None, "speed": speed}
+    notes = [] if speed else ["no speed column: speeds will not be reported from this file (positions and events still are)"]
+    return {"columns_found": found, "upload_warnings": notes}
 
 
 def extract_sensor(evidence: Evidence) -> ObservationSet:

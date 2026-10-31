@@ -16,6 +16,19 @@
       "title": "Id",
       "type": "string"
     },
+    "ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Case-wide display id in upload order, e.g. EVID-002 (never reused)",
+      "title": "Ref"
+    },
     "kind": {
       "$ref": "#/$defs/SourceType"
     },

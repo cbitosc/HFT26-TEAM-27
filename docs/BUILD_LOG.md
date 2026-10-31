@@ -629,3 +629,19 @@ Report: annotated images missing in the Timeline. Could not reproduce on the CCT
 - Closing an event also clears its highlight.
 - Wide layout: the zoom crop was not actually zoomed (padding 1.2x the box) and left a black gap; it now crops to 0.4x padding around the vehicle and matches the main image height.
 Build OK; checked at 1440 px in the browser.
+
+## 2026-10-31 · Gaps 4-7: evidence ingest ids, source references, traceable positions, visible uncertainty
+
+(The request said "continue from gaps 1, 2, 3"; those gaps are not in this session's history, so "gap 2 confidence values" is taken to mean the confidence every observation, event and track point already carries.)
+
+Schema 1.3.1 -> 1.3.2, additive: `Evidence.ref`, `Observation.evidence_ref`. JSON schemas re-exported.
+
+**Gap 4: upload and storage.** The generic upload already took witness .txt and sensor .csv; added dedicated `POST /api/evidence/{video,witness,sensor}` that fix the expected kind (415 otherwise) and share one validation path (readable UTF-8 not-empty text; CSV with a recognised layout and a time column; empty/undecodable files are rejected and not stored). The sensor response reports which expected columns exist (`details.columns_found` timestamp/speed) and warns, without rejecting, when there is no speed column (signal logs and position-only GPS are legitimate, so speed cannot be mandatory). Case-wide display ids `EVID-001`, `EVID-002`, … in upload order (`store.py`: counter file, never reused after a delete; evidence from before this change is numbered by upload order). The dashboard now uploads through the per-kind endpoints and shows the id.
+
+**Gap 5: source references.** `evidence_ref` on every observation, stamped at the end of each run (`app/evidence_refs.py`, one call in `pipeline.py`): `EVID-002, row 21`, `EVID-002, rows 14-15` (the dropout), `EVID-004, line 3`, `EVID-001, frame 375`; bundled demo fixtures keep their own ids rather than claim an EVID number. Shown in every evidence list. Witness quotes stay in `raw_text`.
+
+**Gap 6: trajectory tied to evidence.** The positions export now has, per position: `source` (the old `basis` value: measured/interpolated/…), `basis` (`sensor` | `video` | `simulated`) and `observation_ids`. Measured points cite their sample (and the path observation), points between samples cite both neighbours, and a filled-in stretch also cites the sensor-gap observation that explains it. `simulated` = bundled demo fixtures, or a point with nothing behind it. NOTE: `basis` changed meaning in this export (it was added earlier today and nothing consumes it yet).
+
+**Gap 7: uncertainty on the dashboard.** A permanent bar under the header on every tab: "Evidence-supported reconstruction, not a legal finding", what confidence means, and the count of unresolved contradictions/gaps (links to the explorer). Timeline: confidence chip (coloured) on every event, ⚠ flag on events touched by an open contradiction or gap (by shared observation, or time overlap for short events), summary banner. Contradiction Explorer: sorted by severity, each item badged "unresolved". Reconstruction: confidence in map labels (vehicles, inferred impact) and an "Open at t=…" banner when the replay time is inside a contradiction or gap.
+
+Tests: `tests/test_evidence_gaps.py` (11): per-kind endpoints, validation reasons, nothing rejected is stored, EVID numbering and no reuse, legacy backfill, readable refs incl. rows 14-15, witness line ref, positions carry basis + observation ids that exist, filled-in points cite the gap, demo = simulated, camera tracks = video. `pytest` 159 passed. Checked in the browser (isolated backend with the demo sensor files): statement bar, flags, banner at t=6.5 s, refs in evidence lists, confidence labels.

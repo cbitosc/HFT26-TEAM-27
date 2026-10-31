@@ -209,6 +209,7 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
   const s = E / 60 // scale strokes and text with the view
   const fs = 2.2 * s
   const half = L // two lanes per road -> half-width = one lane width each side
+  const openHere = (conflicts?.conflicts ?? []).filter((c) => c.t_range_s && time >= c.t_range_s[0] - 0.5 && time <= c.t_range_s[1] + 0.5)
   const showCollision = data.collision && time >= data.collision.t_s - 1e-6
 
   // Observed = read from a sensor sample or tracked in video. Everything else (interpolated, extrapolated,
@@ -239,10 +240,10 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
   const labels = layoutLabels([
     ...current.map(({ v, p }) => ({
       key: v.vehicle_id, x: p.x_m, y: -p.y_m, color: 'var(--color-slate-900)',
-      text: `${v.vehicle_id}${p.speed_kmh != null ? ` · ${p.speed_kmh.toFixed(0)} km/h` : ''}${selected === v.vehicle_id ? (obsPoint(v.vehicle_id, p) ? ' · observed' : ' · inferred') : ''}`,
+      text: `${v.vehicle_id}${p.speed_kmh != null ? ` · ${p.speed_kmh.toFixed(0)} km/h` : ''}${p.confidence != null ? ` · ${Math.round(p.confidence * 100)}%` : ''}${selected === v.vehicle_id ? (obsPoint(v.vehicle_id, p) ? ' · observed' : ' · inferred') : ''}`,
     })),
     ...(showCollision ? [{ key: 'collision', x: data.collision.x_m, y: -data.collision.y_m + 2 * fs, color: 'var(--color-red-700)', side: 'left',
-      text: `inferred impact t=${data.collision.t_s.toFixed(1)}s` }] : []),
+      text: `inferred impact t=${data.collision.t_s.toFixed(1)}s · ${Math.round(data.collision.confidence * 100)}%` }] : []),
   ], fs)
 
   const signalNow = Object.entries(derived.signals).map(([appr, phases]) => [appr, signalAt(phases, time)]).filter(([, st]) => st)
@@ -398,6 +399,12 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
           Download positions (JSON)
         </a>
       </div>
+      {openHere.length > 0 && (
+        <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+          <b>⚠ Open at t={time.toFixed(1)}s:</b> {openHere.map((c) => c.title).join(' · ')}.
+          <a href="#contradictions" className="ml-1 font-semibold underline">Contradictions</a>
+        </div>
+      )}
       <div className="mt-2 grid gap-2 rounded border border-slate-200 p-2 text-xs sm:grid-cols-2">
         <div className="flex items-start gap-2">
           <svg width="30" height="14" className="mt-0.5 shrink-0"><line x1="0" y1="7" x2="30" y2="7" stroke="var(--color-slate-700)" strokeWidth="2.5" /><circle cx="15" cy="7" r="3.5" fill="var(--color-slate-700)" stroke="var(--color-white)" /></svg>

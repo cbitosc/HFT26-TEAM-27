@@ -11,7 +11,14 @@ const CATEGORY_COLORS = {
   other: 'bg-slate-400',
 }
 
-export default function IncidentTimeline({ timeline, time, selectedObs, onFocus, observationsById, eventAnalysis }) {
+// Open contradictions or gaps that touch an event: they cite one of its observations or fall inside its time window.
+function flagsFor(event, conflicts) {
+  return (conflicts?.conflicts ?? []).filter((c) => c.observation_ids.some((id) => event.observation_ids.includes(id))
+    // a long-running event (a signal held red for 20 s) overlaps everything, so time alone only counts for short ones
+    || (event.t_end_s - event.t_start_s <= 5 && c.t_range_s && c.t_range_s[0] <= event.t_end_s + 1e-6 && c.t_range_s[1] >= event.t_start_s - 1e-6))
+}
+
+export default function IncidentTimeline({ timeline, time, selectedObs, onFocus, observationsById, eventAnalysis, conflicts }) {
   const [selected, setSelected] = useState(null)
   if (!timeline) return <Panel title="Incident Timeline">Loading…</Panel>
 
@@ -34,9 +41,17 @@ export default function IncidentTimeline({ timeline, time, selectedObs, onFocus,
 
   return (
     <Panel title={`Incident Timeline (${events.length})`}>
+      {(conflicts?.conflicts.length ?? 0) > 0 && (
+        <div className="mb-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <b>{conflicts.conflicts.length} unresolved</b> contradiction{conflicts.conflicts.length === 1 ? '' : 's'} or gap{conflicts.conflicts.length === 1 ? '' : 's'} in the evidence.
+          Events they touch are flagged <span className="font-semibold">⚠</span> below.
+          <a href="#contradictions" className="ml-1 font-semibold underline">Open the Contradiction Explorer</a>
+        </div>
+      )}
       <ul className="space-y-1">
         {events.map((e) => {
           const highlighted = e.id === selected || e.observation_ids.some((id) => selectedObs.includes(id))
+          const flags = flagsFor(e, conflicts)
           return (
             <li key={e.id} onClick={() => pick(e)}
               className={`flex cursor-pointer flex-col gap-1 rounded px-1 py-1 hover:bg-slate-50 sm:flex-row sm:items-center ${highlighted ? 'bg-yellow-50 ring-1 ring-yellow-300' : ''}`}>
@@ -47,6 +62,12 @@ export default function IncidentTimeline({ timeline, time, selectedObs, onFocus,
                   {e.uncertainty_s > 0 && ` ±${e.uncertainty_s}s`}
                   {e.source_types.map((s) => <SourceBadge key={s} type={s} />)}
                   <BasisBadge basis={e.basis} />
+                  <span className={`font-medium ${e.confidence >= 0.7 ? 'text-emerald-700' : e.confidence >= 0.4 ? 'text-amber-700' : 'text-rose-600'}`}
+                    title="How well the evidence supports this event">conf {Math.round(e.confidence * 100)}%</span>
+                  {flags.length > 0 && (
+                    <a href="#contradictions" onClick={(ev) => ev.stopPropagation()} title={flags.map((f) => f.title).join('\n')}
+                      className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800">⚠ {flags.length} open</a>
+                  )}
                 </div>
               </div>
               <div className="relative h-3 w-full flex-1 rounded bg-slate-100" title={`confidence ${e.confidence}`}>

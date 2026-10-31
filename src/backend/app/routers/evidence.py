@@ -37,9 +37,34 @@ def list_evidence() -> list[Evidence]:
 
 @router.post("", response_model=Evidence, status_code=201)
 async def upload_evidence(file: UploadFile) -> Evidence:
+    """Any supported file; the kind (video / witness / sensor) is taken from the extension."""
+    return await _ingest(file, None)
+
+
+@router.post("/video", response_model=Evidence, status_code=201)
+async def upload_video(file: UploadFile) -> Evidence:
+    """Dashcam / CCTV footage. Must be a readable video."""
+    return await _ingest(file, SourceType.video)
+
+
+@router.post("/witness", response_model=Evidence, status_code=201)
+async def upload_witness(file: UploadFile) -> Evidence:
+    """A written witness statement: a non-empty UTF-8 .txt file."""
+    return await _ingest(file, SourceType.witness)
+
+
+@router.post("/sensor", response_model=Evidence, status_code=201)
+async def upload_sensor(file: UploadFile) -> Evidence:
+    """A sensor record: a .csv with a timestamp column plus speed, position, signal or motion columns."""
+    return await _ingest(file, SourceType.sensor)
+
+
+async def _ingest(file: UploadFile, expected: SourceType | None) -> Evidence:
     if not file.filename:
         raise HTTPException(400, "Missing filename")
     kind = _kind_for(file.filename)
+    if expected is not None and kind != expected:
+        raise HTTPException(415, f"{file.filename}: this endpoint takes {expected.value} evidence, but the file looks like {kind.value}")
     data = await file.read()
     if not data:
         raise HTTPException(400, "Empty file")

@@ -11,10 +11,13 @@ async function request(path, options) {
 
 export const api = {
   listEvidence: () => request('/evidence'),
+  // Each kind has its own endpoint with its own validation (video / witness / sensor).
   uploadEvidence: (file) => {
     const form = new FormData()
     form.append('file', file)
-    return request('/evidence', { method: 'POST', body: form })
+    const ext = file.name.split('.').pop().toLowerCase()
+    const kind = ext === 'txt' ? 'witness' : ext === 'csv' ? 'sensor' : 'video'
+    return request(`/evidence/${kind}`, { method: 'POST', body: form })
   },
   deleteEvidence: (id) => request(`/evidence/${id}`, { method: 'DELETE' }),
   runAnalysis: () => request('/analysis/run', { method: 'POST' }),

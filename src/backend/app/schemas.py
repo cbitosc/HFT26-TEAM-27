@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-SCHEMA_VERSION = "1.3.1"
+SCHEMA_VERSION = "1.3.2"
 
 
 # ---------------------------------------------------------------- evidence
@@ -27,6 +27,7 @@ class SourceType(str, Enum):
 class Evidence(BaseModel):
     """One uploaded file. Created by the upload endpoint, read by modules 1–2."""
     id: str
+    ref: str | None = Field(None, description="Case-wide display id in upload order, e.g. EVID-002 (never reused)")
     kind: SourceType
     filename: str
     content_type: str | None = None
@@ -51,6 +52,7 @@ class Observation(BaseModel):
     id: str
     source_type: SourceType
     source_ref: SourceRef
+    evidence_ref: str | None = Field(None, description="Human-readable pointer into the original evidence, e.g. 'EVID-002, line 3' or 'EVID-003, rows 412-415'; set at the end of a run")
     timestamp: datetime | None = Field(None, description="Absolute time if known")
     t_rel_s: float | None = Field(None, description="Seconds relative to incident reference time")
     time_uncertainty_s: float = Field(0.0, ge=0)

@@ -30,7 +30,9 @@ export default function ObservationList({ ids, observationsById }) {
                 {o.t_rel_s != null && <span className="text-slate-400">t={o.t_rel_s}s</span>}
                 <span className="text-slate-400">conf {Math.round(o.confidence * 100)}%</span>
               </div>
-              <div className="truncate text-slate-400">{o.source_ref.file} @ {o.source_ref.locator}</div>
+              <div className="truncate text-slate-400" title={`${o.source_ref.file} @ ${o.source_ref.locator}`}>
+                {o.evidence_ref ? <><span className="font-mono text-slate-500">{o.evidence_ref}</span> · {o.source_ref.file}</> : <>{o.source_ref.file} @ {o.source_ref.locator}</>}
+              </div>
               {o.raw_text && <p className="italic text-slate-600">“{o.raw_text}”</p>}
               {extra.length > 0 && <p className="text-slate-500">{extra.join(' · ')}</p>}
             </div>

@@ -127,4 +127,4 @@ def reconstruction_positions(download: bool = False):
     stored = store.load_output("reconstruction.json")
     rec = Reconstruction.model_validate(stored) if stored else store.load_fixture("reconstruction.json", Reconstruction)
     headers = {"Content-Disposition": 'attachment; filename="vehicle_positions.json"'} if download else None
-    return JSONResponse(positions_export(rec), headers=headers)
+    return JSONResponse(positions_export(rec, [ObservationSet.model_validate(x) for x in observations()]), headers=headers)

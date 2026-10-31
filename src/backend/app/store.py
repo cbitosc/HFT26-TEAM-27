@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import threading
 from datetime import datetime, timezone
@@ -22,17 +23,50 @@ def _index_path() -> Path:
     return config.STORAGE_DIR / _INDEX
 
 
+_COUNTER = "evidence_counter.txt"
+_REF_LOCK = threading.Lock()
+
+
+def _write_index(items: list[Evidence]) -> None:
+    config.STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+    _index_path().write_text(json.dumps([e.model_dump(mode="json") for e in items], indent=2))
+
+
+def _ref_number(ref: str | None) -> int:
+    m = re.fullmatch(r"EVID-(\d+)", ref or "")
+    return int(m.group(1)) if m else 0
+
+
+def _next_number(items: list[Evidence]) -> int:
+    """Next EVID number: one past the highest ever issued, so a deleted file's number is never reused."""
+    counter = config.STORAGE_DIR / _COUNTER
+    issued = int(counter.read_text()) if counter.exists() and counter.read_text().strip().isdigit() else 0
+    n = max([issued] + [_ref_number(e.ref) for e in items]) + 1
+    config.STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+    counter.write_text(str(n))
+    return n
+
+
 def list_evidence() -> list[Evidence]:
     path = _index_path()
     if not path.exists():
         return []
-    return [Evidence.model_validate(e) for e in json.loads(path.read_text())]
+    items = [Evidence.model_validate(e) for e in json.loads(path.read_text())]
+    if any(e.ref is None for e in items):  # evidence uploaded before display ids existed: number by upload order
+        with _REF_LOCK:
+            for e in items:
+                if e.ref is None:
+                    e.ref = f"EVID-{_next_number([x for x in items if x.ref]):03d}"
+            _write_index(items)
+    return items
 
 
 def add_evidence(evidence: Evidence) -> None:
-    items = list_evidence() + [evidence]
-    config.STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-    _index_path().write_text(json.dumps([e.model_dump(mode="json") for e in items], indent=2))
+    items = list_evidence()
+    with _REF_LOCK:
+        if evidence.ref is None:
+            evidence.ref = f"EVID-{_next_number(items):03d}"
+    _write_index(items + [evidence])
 
 
 def delete_evidence(evidence_id: str) -> bool:

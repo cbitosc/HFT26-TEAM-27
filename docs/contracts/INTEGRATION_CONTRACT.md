@@ -1,6 +1,6 @@
 # Integration contract
 
-**Source of truth:** [`src/backend/app/schemas.py`](../../src/backend/app/schemas.py) (schema version `1.3.1`).
+**Source of truth:** [`src/backend/app/schemas.py`](../../src/backend/app/schemas.py) (schema version `1.3.2`).
 JSON Schema copies live in [`schemas/`](schemas/). Regenerate them with `python scripts/export_schemas.py`.
 Example payloads for every shape are in [`/fixtures`](../../fixtures).
 
@@ -60,6 +60,7 @@ extrapolated / tracked / estimated) and `confidence`.
 - **ObservationSet** — one extractor run on one Evidence: `source_type, evidence_id, producer, generated_at, observations[], warnings[]`
 - **Timeline** — `incident_id, reference_time, events[]`; each **TimelineEvent** has `t_start_s, t_end_s, label, category, vehicle_ids, observation_ids, source_types, confidence, uncertainty_s`
 - **ConflictReport** — `conflicts[]`; each **Conflict** has `type ∈ {numeric_mismatch, timestamp_overlap, semantic, missing_evidence}`, `severity ∈ {low, medium, high}`, `title, description, observation_ids, t_range_s, details{}`
+- **Evidence** has `ref` (`EVID-002`); each **Observation** has `evidence_ref`, a readable pointer into the original (`EVID-002, line 3`, `EVID-003, rows 412-415`, `EVID-001, frame 375`), set at the end of every run. `source_ref` keeps the machine form (`evidence_id`, `file`, `locator`)
 - **Reconstruction** — `scene{extent_m, lane_width_m, roads}, t_min_s, t_max_s, vehicles[{vehicle_id, label, color, track[{t_s,x_m,y_m,heading_deg,speed_kmh}]}], collision{t_s,x_m,y_m,confidence,supporting_observation_ids}`
   - `scene.type = "four_way_intersection"` (units m, +y north) from sensor tracks, or `"camera_image"` (units **px**, +y down) from fixed-camera video: `scene.image{evidence_id, frame, width, height, views, fps, t_offset_s}` is the frame the tracks are drawn on (`/api/evidence/{id}/frames/{n}`). Track ids `T<view>-<n>` are moving vehicles, `S<view>-<n>` are verified stopped vehicles. Metric tracks win when both exist
   - `scene.units = "schematic"` (type `metric`): layout and order of movement only. Image positions are mapped onto a flat road with a *nominal* camera (horizon just above the view, ~60 degree field of view), so units are not metres. Chosen over an empty panel when a fixed camera has tracks but no calibration; the dashboard shows it with a warning banner
@@ -70,6 +71,7 @@ extrapolated / tracked / estimated) and `confidence`.
 | Method | Path | Returns |
 | --- | --- | --- |
 | GET | `/api/health` | status, schema version |
+| POST | `/api/evidence/video`, `/api/evidence/witness`, `/api/evidence/sensor` | Same as the generic upload, but the endpoint fixes the expected kind (**415** if the file is another kind). Witness: readable UTF-8 `.txt`, not empty. Sensor: `.csv` with a recognised layout and a time column; `details.columns_found` says which of `timestamp` / `speed` it has and `details.upload_warnings` flags a missing speed column (accepted: signal logs and position-only GPS are valid). Every accepted file gets a case-wide display id `ref` (`EVID-001`, `EVID-002`, … in upload order, never reused after a delete) and the original is stored unchanged with its sha256 |
 | GET / POST | `/api/evidence` | list / upload (`multipart file`). Type by extension: `.mp4 .mov .avi .mkv` → video, `.txt` → witness, `.csv` → sensor. Upload records `sha256` and `details` (video fps/duration, CSV layout); **409** for a duplicate, **422** for an unusable file (undecodable video, unknown CSV layout, empty/non-UTF-8 text) |
 | DELETE | `/api/evidence/{id}` | 204 |
 | POST | `/api/analysis/run` | Synchronous run → `AnalysisRun`, per-stage status `real \| fixture \| skipped \| error`. 409 while another run is in progress |
@@ -88,7 +90,7 @@ extrapolated / tracked / estimated) and `confidence`.
 | GET | `/api/timeline` | `Timeline` |
 | GET | `/api/conflicts` | `ConflictReport` |
 | GET | `/api/reconstruction` | `Reconstruction`: the **top-down map in metres** (sensor/GPS paths, else a calibrated camera view on the road plane, else a **schematic** plan from an uncalibrated fixed camera (`scene.units: "schematic"`, every point `estimated`, no speeds, no collision marker, `note` states the assumptions), else empty with `note` saying what evidence is missing) |
-| GET | `/api/reconstruction/positions?download=false` | The same reconstruction as a plain "id and positions" JSON: `vehicles[{id, label, positions[{t_s, x, y, heading_deg, speed_kmh, basis, confidence}]}]`, `collision{t_s, x, y, confidence}`, and a `coordinate_system` block (metres +x east / +y north, or camera pixels). `download=true` sends it as `vehicle_positions.json` |
+| GET | `/api/reconstruction/positions?download=false` | The same reconstruction as a plain "id and positions" JSON: `vehicles[{id, label, positions[{t_s, x, y, heading_deg, speed_kmh, source, basis, observation_ids, confidence}]}]` (`source` = measured / interpolated / extrapolated / tracked / estimated; `basis` = `sensor` \| `video` \| `simulated`, where simulated is bundled demo data or a position with no evidence behind it; `observation_ids` = the observations the point rests on: its own sample, the two neighbouring samples when filled in, plus the sensor-gap observation that explains a filled-in stretch), `collision{t_s, x, y, confidence}`, and a `coordinate_system` block (metres +x east / +y north, or camera pixels). `download=true` sends it as `vehicle_positions.json` |
 | GET | `/api/event-analysis` | `Reconstruction` with a `camera_image` scene: footage with detections and image-space tracks (pixels), or `null` without video tracks |
 
 Before the first run, the GET endpoints serve fixtures.

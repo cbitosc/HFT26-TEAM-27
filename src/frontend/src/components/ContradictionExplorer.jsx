@@ -28,13 +28,19 @@ export default function ContradictionExplorer({ report, observationsById, onFocu
           {TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
         </select>
       }>
+      {report.conflicts.length > 0 && (
+        <p className="mb-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <b>{report.conflicts.length} unresolved.</b> Nothing here is settled automatically: each item needs a person to
+          weigh the sources. High severity first.
+        </p>
+      )}
       {conflicts.length === 0 && <p className="text-xs text-slate-400">No contradictions between the sources.</p>}
       <ul className="space-y-2">
-        {conflicts.map((c) => (
+        {[...conflicts].sort((a, b) => ['high', 'medium', 'low'].indexOf(a.severity) - ['high', 'medium', 'low'].indexOf(b.severity)).map((c) => (
           <li key={c.id} className={`rounded border border-l-4 border-slate-200 ${SEVERITY_STYLES[c.severity]}`}>
             <button onClick={() => toggle(c)} className="w-full p-2 text-left">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium">{c.title}</span>
+                <span className="text-sm font-medium"><span className="mr-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[0.7rem] font-medium text-amber-800">unresolved</span>{c.title}</span>
                 <span className="shrink-0 text-[0.7rem] uppercase text-slate-400">
                   {c.type.replace('_', ' ')}{c.basis === 'llm' ? ' · AI-detected' : ' · rule'}
                 </span>

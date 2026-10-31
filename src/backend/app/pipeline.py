@@ -25,6 +25,7 @@ from typing import Callable, Protocol
 
 from app import config, store
 from app.modules.contradictions import detect_conflicts
+from app.evidence_refs import stamp_evidence_refs
 from app.modules.extraction import extract_sensor, extract_witness
 from app.modules.fusion import fuse, resolve_entities
 from app.modules.ingestion import analyze_video
@@ -235,6 +236,7 @@ def _run(tracker: Tracker) -> AnalysisRun:
                           "reconstruction.json", Reconstruction, demo, tracker)
     results.append(r)
 
+    stamp_evidence_refs(observation_sets, evidence)
     run = AnalysisRun(run_id=run_id, started_at=started, finished_at=_now(),
                       evidence_count=len(evidence), stages=results, evidence=manifest)
     store.save_output("observations.json", observation_sets)

@@ -90,6 +90,7 @@ export default function App() {
     footage: results?.eventAnalysis ? '●' : null,
   }
   const high = results?.conflicts.conflicts.filter((c) => c.severity === 'high').length ?? 0
+  const unresolved = results?.conflicts.conflicts.length ?? 0 // nothing resolves a conflict automatically
   const confirmed = results?.timeline && run
   const schematic = results?.reconstruction?.scene?.units === 'schematic'
 
@@ -137,13 +138,20 @@ export default function App() {
         </nav>
       </header>
 
+      <div className="border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-center text-xs text-amber-900">
+        <b>Evidence-supported reconstruction, not a legal finding.</b> Confidence shows how well the evidence supports an item,
+        not the probability that it happened.
+        {unresolved > 0 && <button onClick={() => open('contradictions')} className="ml-2 font-semibold underline">
+          {unresolved} unresolved contradiction{unresolved === 1 ? '' : 's'} / gap{unresolved === 1 ? '' : 's'}</button>}
+      </div>
+
       <main className="mx-auto max-w-7xl space-y-4 px-4 py-4 *:min-w-0">
         {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>}
         {pane('overview', <Overview results={results} run={run} onOpen={open} />)}
         {pane('evidence', <div className="mx-auto max-w-2xl"><EvidenceManager run={run} observations={results?.observations}
           onAnalysisDone={loadResults} onRunningChange={setAnalysing} /></div>)}
         {pane('timeline', <IncidentTimeline timeline={results?.timeline} time={time} selectedObs={selectedObs} onFocus={focus}
-          observationsById={observationsById} eventAnalysis={results?.eventAnalysis} />)}
+          observationsById={observationsById} eventAnalysis={results?.eventAnalysis} conflicts={results?.conflicts} />)}
         {pane('contradictions', <ContradictionExplorer report={results?.conflicts} observationsById={observationsById} onFocus={focus} />)}
         {pane('reconstruction', <ReconstructionViewer data={results?.reconstruction} time={time} onTimeChange={setTime}
           timeline={results?.timeline} conflicts={results?.conflicts} observationsById={observationsById} onFocus={focus} />)}
