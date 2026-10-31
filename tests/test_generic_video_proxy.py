@@ -184,3 +184,21 @@ def test_collision_and_box_tracks_see_sightings_the_fixed_camera_filter_drops():
     assert dropped["stopped"] == 1 and not filtered[1][1].vehicles  # the filter removed it
     obs = frames_to_observations(ev, info, filtered, "fixed", persistence, raw=analysed)
     assert [o.t_rel_s for o in obs if o.action == "collision"] == [pytest.approx(0.8)]
+
+
+def _single_source_collision(camera: str):
+    from app.modules.contradictions import detect_conflicts
+    from app.modules.timeline import build_timeline
+    from app.schemas import Observation, ObservationSet, SourceRef
+
+    obs = Observation(id="v1", source_type="video", source_ref=SourceRef(evidence_id="ev_v", file="v.mp4", locator="frame:100"),
+                      t_rel_s=4.8, time_uncertainty_s=0.5, action="collision", confidence=0.6,
+                      attributes={"vehicles": ["white sedan", "white car"], "camera": camera})
+    sets = [ObservationSet(source_type="video", evidence_id="ev_v", producer="t", generated_at=datetime.now(timezone.utc), observations=[obs])]
+    report = detect_conflicts(sets, build_timeline(sets))
+    return next(c for c in report.conflicts if c.type.value == "missing_evidence").description
+
+
+def test_single_source_wording_follows_the_camera_type():
+    assert "supported only by the camera footage" in _single_source_collision("fixed")
+    assert "supported only by the dashcam" in _single_source_collision("dashcam")

@@ -29,7 +29,7 @@ def source_label(o: Observation) -> str:
     if o.source_type == SourceType.witness:
         return witness_label(o)
     if o.source_type == SourceType.video:
-        return "dashcam"
+        return "camera" if o.attributes.get("camera") == "fixed" else "dashcam"
     if o.action == "signal_state" and o.vehicle_id is None:
         return "signal controller"
     return f"{o.vehicle_id} telemetry" if o.vehicle_id else "sensor"

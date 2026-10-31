@@ -206,7 +206,7 @@ def signal_states(ctx: Context) -> list[dict]:
             who = source_label(o)
             subject = f"{o.vehicle_id}'s light" if o.vehicle_id else "the light"
             others = [ctx.by_id[i] for i in agreeing[1:]]
-            names = [("the " + n if n == "dashcam" else n) for n in (source_label(a) for a in others)]
+            names = [("the " + n if n in ("dashcam", "camera") else n) for n in (source_label(a) for a in others)]
             agree_txt = f" {_and(names)[0].upper()}{_and(names)[1:]} also report{'s' if len(others) == 1 else ''} {state}." if others else ""
             entered = ""
             if o.vehicle_id and (entry := ctx.entry_t(o.vehicle_id)):
@@ -503,7 +503,9 @@ def single_source_events(ctx: Context) -> list[dict]:
                      f"rests on the {only.value} record alone; no camera or witness saw the signal head.")
             # The window that matters is from the entry to the collision.
             t_range = (ctx.t_of(entries[0]), t_c if t_c is not None else e.t_end_s)
-        label = {"sensor": "the sensor/controller log", "video": "the dashcam", "witness": "witness accounts"}[only.value]
+        fixed_cam = any(o.source_type == SourceType.video and o.attributes.get("camera") == "fixed" for o in ctx.observations)
+        label = {"sensor": "the sensor/controller log", "video": "the camera footage" if fixed_cam else "the dashcam",
+                 "witness": "witness accounts"}[only.value]
         out.append(_draft(
             ConflictType.missing_evidence,
             Severity.medium if e.category == "collision" else Severity.low,
