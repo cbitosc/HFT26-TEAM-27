@@ -17,7 +17,7 @@ function elapsed(from, to) {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`
 }
 
-export default function EvidenceManager({ run, observations, onAnalysisDone }) {
+export default function EvidenceManager({ run, observations, onAnalysisDone, onRunningChange }) {
   const [evidence, setEvidence] = useState([])
   const [uploading, setUploading] = useState(false)
   const [job, setJob] = useState(null)
@@ -25,6 +25,7 @@ export default function EvidenceManager({ run, observations, onAnalysisDone }) {
   const [, tick] = useState(0)
   const inputRef = useRef(null)
   const running = job?.state === 'running'
+  useEffect(() => { onRunningChange?.(running) }, [running, onRunningChange])
 
   const refresh = () => api.listEvidence().then(setEvidence).catch(() => {})
   useEffect(() => { refresh() }, [])

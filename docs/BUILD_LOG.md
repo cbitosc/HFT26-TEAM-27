@@ -578,3 +578,14 @@ Frontend only (no contract change): new `ReconstructionTrace.jsx` beside the map
 - `positionAt` now carries point source and confidence.
 
 Checked in the dashboard on the user's CCTV clip: select a vehicle, evidence list, key moments. `npm run build` OK.
+
+## 2026-10-31 · Multi-tab dashboard
+
+Why: one long page made the four required dashboard components (Evidence Manager, Incident Timeline, Contradiction Explorer, Reconstruction Viewer) hard to use and demo. Frontend only; no API or contract change.
+
+- `App.jsx`: dark header (case id, reference time, "Analysing…" pulse, last run) and tab bar: **Overview, Evidence, Timeline, Contradictions, Reconstruction, Footage**. Count badges on each tab (red on Contradictions when any is high severity). Active tab lives in the URL hash (`#reconstruction`), so tabs are linkable and survive reload. All tabs stay mounted (hidden when inactive) so a running analysis, replay time and selections persist across tab changes; one shared clock still drives timeline, footage and reconstruction.
+- New `Overview.jsx`: caveat banner (reconstruction of what *may* have happened, not a legal finding), four stat cards (observations by source, events, contradictions by severity, reconstruction confidence), pipeline status, top contradictions, timeline at a glance, links into each tab.
+- `EvidenceManager.jsx`: `onRunningChange` so the header shows analysis progress from any tab.
+- `ReconstructionViewer.jsx`: a schematic plan opens at its first track (was an empty map at t=2.0 s).
+
+Checked in the browser (1280 px): overview, hash navigation, tab state, reconstruction with trace side panel. `pytest` 148 passed; `npm run build` OK.

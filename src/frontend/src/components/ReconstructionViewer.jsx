@@ -98,6 +98,12 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
   const [playing, setPlaying] = useState(false)
   const [selected, setSelected] = useState(null)
   useEffect(() => { setSelected(null) }, [data])
+  // A plan built from camera tracks has nothing to show before its first track: open there.
+  useEffect(() => {
+    if (data?.scene?.units !== 'schematic' || !data.vehicles.length) return
+    const first = Math.min(...data.vehicles.map((v) => v.track[0].t_s))
+    if (timeRef.current < first) onTimeChange(first)
+  }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
   const [zoom, setZoom] = useState('auto')
   const [rate, setRate] = useState(1)
   const rateRef = useRef(1)
