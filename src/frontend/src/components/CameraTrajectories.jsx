@@ -23,6 +23,8 @@ export default function CameraTrajectories({ data, time, onTimeChange, Panel, ti
   const [playing, setPlaying] = useState(false)
   const [showAll, setShowAll] = useState(true)
   const [view, setView] = useState(0) // 0 = all views
+  // Set when a frame fails to load (the video was deleted or replaced since this run): say so, don't draw over black.
+  const [frameMissing, setFrameMissing] = useState(false)
   const timeRef = useRef(time)
   useEffect(() => { timeRef.current = time }, [time])
 
@@ -54,6 +56,7 @@ export default function CameraTrajectories({ data, time, onTimeChange, Panel, ti
   const vehicles = data.vehicles.filter(inView)
   const active = vehicles.filter((v) => at(v.track, t))
   const stopped = vehicles.filter((v) => v.vehicle_id.startsWith('S'))
+  useEffect(() => { setFrameMissing(false) }, [img.evidence_id])
   const r = Math.max(3, (box[2] - box[0]) / 120)
   // Replay: the background is the video frame at the current time, in 0.5 s steps (cached by the browser).
   const frame = img.fps
@@ -76,7 +79,8 @@ export default function CameraTrajectories({ data, time, onTimeChange, Panel, ti
       <div className="relative mx-auto w-full overflow-hidden rounded bg-black" style={{ aspectRatio: `${box[2] - box[0]} / ${box[3] - box[1]}` }}>
         <svg viewBox={`${box[0]} ${box[1]} ${box[2] - box[0]} ${box[3] - box[1]}`} className="absolute inset-0 h-full w-full">
           <image href={`/api/evidence/${img.evidence_id}/frames/${frame}?width=${img.width}`}
-            x={0} y={0} width={img.width} height={img.height} opacity={0.85} />
+            x={0} y={0} width={img.width} height={img.height} opacity={frameMissing ? 0 : 0.85}
+            onLoad={() => setFrameMissing(false)} onError={() => setFrameMissing(true)} />
           {vehicles.map((v) => {
             const past = v.track.filter((p) => p.t_s <= t)
             const pts = (showAll ? v.track : past).map((p) => `${p.x_m},${p.y_m}`).join(' ')
@@ -100,6 +104,12 @@ export default function CameraTrajectories({ data, time, onTimeChange, Panel, ti
                 </g>
           })}
         </svg>
+        {frameMissing && (
+          <div role="alert" className="absolute inset-x-0 top-0 bg-amber-50/95 px-3 py-2 text-xs text-amber-900">
+            <b>Footage unavailable.</b> Video <span className="font-mono">{img.evidence_id}</span> is no longer in the
+            evidence list (or its frames cannot be read). Tracks are shown without footage. Re-run the analysis.
+          </div>
+        )}
       </div>
 
       <div className="mt-3 flex items-center gap-3">

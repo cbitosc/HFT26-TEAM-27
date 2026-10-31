@@ -751,3 +751,11 @@ Checked end to end on the night clip in isolated storage with a throwaway manual
 
 - Footage view (`CameraTrajectories.jsx`): AI-sighted tracks are drawn dotted with a ring marker and their name (`B1-004 · white car`); measured motion tracks keep solid lines and filled dots. Same observed-vs-inferred rule as the plan.
 - Checked the other real clip (4-view daytime traffic camera) again with the final code against its stored run: identical 123 track observations, 58-vehicle plan and events, plus one extra motion spike (view 4, 27 s); the AI-linking branch does not fire there (123 motion tracks), 0 AI-linked tracks added.
+
+## 2026-10-31 · Dashboard says when results are stale
+
+Problem seen: a tab still showed old run e6790ce3, whose 4-view video (`ev_bab6e35e`) had been deleted and replaced, while newer runs existed. The frame requests 404'd and the tracks were drawn over a blank or leftover blurred background with no warning.
+
+- Footage view (`CameraTrajectories.jsx`): when a frame fails to load, the background image is hidden and an overlay says "Footage unavailable. Video ev_… is no longer in the evidence list (or its frames cannot be read). Tracks are shown without footage. Re-run the analysis." It clears as soon as a frame loads (new run, other video).
+- `App.jsx`: on window focus, tab becoming visible and every 15 s, the dashboard fetches `/api/analysis/latest` and `/api/evidence`. If the latest run differs from the one on screen it shows "Newer results available" with a Reload button (results never change under the user). If any evidence in the on-screen run's manifest is no longer in the evidence list it says the results are stale, names the deleted files and points to re-running. Hidden while an analysis is running.
+- Checked in the browser preview against a copy of storage set to run e6790ce3: both banners and the overlay show; after the latest run became 0a3d05c8, focus showed the newer-run banner and Reload cleared everything with footage back. `npm run build` ok; `pytest` 207 passed. Frontend only, no contract change.

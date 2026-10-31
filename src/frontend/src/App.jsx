@@ -83,6 +83,36 @@ export default function App() {
 
   useEffect(() => { loadResults() }, [loadResults])
 
+  // Results on screen can go stale: a newer run finished (another tab, the CLI) or evidence it used was deleted.
+  // Check on window focus and every 15 s; the user reloads explicitly so panels never change under them.
+  const [newerRun, setNewerRun] = useState(null)
+  const [missingEvidence, setMissingEvidence] = useState([])
+  useEffect(() => {
+    if (!run) return
+    let cancelled = false
+    const check = async () => {
+      try {
+        const [latest, evidence] = await Promise.all([api.latestRun(), api.listEvidence()])
+        if (cancelled) return
+        setNewerRun(latest && latest.run_id !== run.run_id ? latest : null)
+        const present = new Set(evidence.map((e) => e.id))
+        setMissingEvidence((run.evidence ?? []).filter((e) => !present.has(e.id)))
+      } catch { /* API unreachable: loadResults reports that */ }
+    }
+    check()
+    const onFocus = () => check()
+    const onVisible = () => { if (document.visibilityState === 'visible') check() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisible)
+    const timer = setInterval(check, 15000)
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisible)
+      clearInterval(timer)
+    }
+  }, [run])
+
   const observationsById = useMemo(() => {
     const map = {}
     for (const set of results?.observations ?? []) for (const o of set.observations) map[o.id] = o
@@ -161,6 +191,21 @@ export default function App() {
 
       <main className="mx-auto max-w-7xl space-y-4 px-4 py-4 *:min-w-0">
         {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+        {!analysing && (newerRun || missingEvidence.length > 0) && (
+          <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+            <span className="min-w-0 flex-1">
+              <b>{newerRun ? 'Newer results available.' : 'These results are stale.'}</b>{' '}
+              {newerRun && <>You are viewing run <span className="font-mono">{run.run_id}</span>; run{' '}
+                <span className="font-mono">{newerRun.run_id}</span> has finished since. </>}
+              {missingEvidence.length > 0 && <>Run <span className="font-mono">{run.run_id}</span> used evidence that has
+                since been deleted: {missingEvidence.map((e) => `${e.filename} (${e.id})`).join(', ')}.
+                {!newerRun && ' Re-run the analysis.'}</>}
+            </span>
+            {newerRun
+              ? <button onClick={loadResults} className="rounded bg-amber-600 px-3 py-1 text-xs font-medium text-white hover:bg-amber-700">Reload</button>
+              : <button onClick={() => open('evidence')} className="rounded bg-amber-600 px-3 py-1 text-xs font-medium text-white hover:bg-amber-700">Go to Evidence</button>}
+          </div>
+        )}
         {pane('overview', <Overview results={results} run={run} onOpen={open} />)}
         {pane('evidence', <div className="mx-auto max-w-2xl"><EvidenceManager run={run} observations={results?.observations}
           onAnalysisDone={loadResults} onRunningChange={setAnalysing} /></div>)}
