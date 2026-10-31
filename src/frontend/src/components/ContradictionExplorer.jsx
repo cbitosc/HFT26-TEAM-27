@@ -11,10 +11,12 @@ const TYPES = ['all', 'numeric_mismatch', 'semantic', 'timestamp_overlap', 'miss
 
 export default function ContradictionExplorer({ report, observationsById, onFocus }) {
   const [filter, setFilter] = useState('all')
+  const [severity, setSeverity] = useState('all')
   const [open, setOpen] = useState(null)
   if (!report) return <Panel title="Contradiction Explorer">Loading…</Panel>
 
-  const conflicts = report.conflicts.filter((c) => filter === 'all' || c.type === filter)
+  const conflicts = report.conflicts.filter((c) => (filter === 'all' || c.type === filter) && (severity === 'all' || c.severity === severity))
+  const count = (s) => report.conflicts.filter((c) => c.severity === s).length
 
   const toggle = (c) => {
     setOpen(open === c.id ? null : c.id)
@@ -29,12 +31,22 @@ export default function ContradictionExplorer({ report, observationsById, onFocu
         </select>
       }>
       {report.conflicts.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Filter by severity">
+          {['all', 'high', 'medium', 'low'].map((s) => (
+            <button key={s} onClick={() => setSeverity(s)} aria-pressed={severity === s}
+              className={`rounded-full border px-2.5 py-0.5 capitalize ${severity === s ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+              {s}{s !== 'all' ? ` (${count(s)})` : ` (${report.conflicts.length})`}
+            </button>
+          ))}
+        </div>
+      )}
+      {report.conflicts.length > 0 && (
         <p className="mb-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           <b>{report.conflicts.length} unresolved.</b> Nothing here is settled automatically: each item needs a person to
           weigh the sources. High severity first.
         </p>
       )}
-      {conflicts.length === 0 && <p className="text-xs text-slate-400">No contradictions between the sources.</p>}
+      {conflicts.length === 0 && <p className="text-xs text-slate-400">{report.conflicts.length ? 'No items match these filters.' : 'No contradictions between the sources. With a single source there is nothing to compare.'}</p>}
       <ul className="space-y-2">
         {[...conflicts].sort((a, b) => ['high', 'medium', 'low'].indexOf(a.severity) - ['high', 'medium', 'low'].indexOf(b.severity)).map((c) => (
           <li key={c.id} className={`rounded border border-l-4 border-slate-200 ${SEVERITY_STYLES[c.severity]}`}>

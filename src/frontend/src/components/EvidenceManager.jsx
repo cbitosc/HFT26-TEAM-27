@@ -12,6 +12,15 @@ const STATUS_STYLES = {
 }
 const FINISHED = new Set(['real', 'fixture', 'skipped', 'error'])
 
+// One line about what the upload check learned (layout and rows, words, duration).
+function evidenceNote(e) {
+  const d = e.details ?? {}
+  if (e.kind === 'sensor' && d.layout_name) return `${d.layout_name} · ${d.rows} rows${d.columns_found?.speed ? ` · speed: ${d.columns_found.speed}` : ''}`
+  if (e.kind === 'witness' && d.words != null) return `${d.words} words · ${d.lines} lines`
+  if (e.kind === 'video' && d.duration_s != null) return `${d.duration_s}s · ${d.width}×${d.height}`
+  return null
+}
+
 function elapsed(from, to) {
   const s = Math.max(0, Math.round(((to ? new Date(to) : new Date()) - new Date(from)) / 1000))
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`
@@ -20,6 +29,7 @@ function elapsed(from, to) {
 export default function EvidenceManager({ run, observations, onAnalysisDone, onRunningChange }) {
   const [evidence, setEvidence] = useState([])
   const [uploading, setUploading] = useState(false)
+  const [dragging, setDragging] = useState(false)
   const [job, setJob] = useState(null)
   const [message, setMessage] = useState(null)
   const [, tick] = useState(0)
@@ -67,6 +77,8 @@ export default function EvidenceManager({ run, observations, onAnalysisDone, onR
   }
 
   const remove = async (id) => {
+    const e = evidence.find((x) => x.id === id)
+    if (!window.confirm(`Remove ${e?.ref ?? ''} ${e?.filename ?? 'this file'}? Its stored copy is deleted; the removal is logged.`)) return
     await api.deleteEvidence(id)
     refresh()
   }
@@ -89,7 +101,9 @@ export default function EvidenceManager({ run, observations, onAnalysisDone, onR
 
   return (
     <Panel title="Evidence Manager">
-      <label className={`block rounded-md border-2 border-dashed border-slate-300 p-4 text-center text-sm text-slate-500 ${running || uploading ? 'opacity-50' : 'cursor-pointer hover:border-slate-400'}`}>
+      <label onDragOver={(e) => { e.preventDefault(); if (!running && !uploading) setDragging(true) }} onDragLeave={() => setDragging(false)}
+        onDrop={(e) => { e.preventDefault(); setDragging(false); if (!running && !uploading) upload([...e.dataTransfer.files]) }}
+        className={`block rounded-md border-2 border-dashed p-4 text-center text-sm text-slate-500 ${dragging ? 'border-sky-500 bg-sky-50' : 'border-slate-300'} ${running || uploading ? 'opacity-50' : 'cursor-pointer hover:border-slate-400'}`}>
         <input ref={inputRef} type="file" multiple accept=".mp4,.mov,.avi,.mkv,.txt,.csv" className="hidden"
           disabled={running || uploading} onChange={(e) => upload([...e.target.files])} />
         {uploading ? 'Uploading…' : 'Drop or choose files — video, witness .txt, sensor .csv'}
@@ -100,13 +114,17 @@ export default function EvidenceManager({ run, observations, onAnalysisDone, onR
           ? <li className="text-xs text-slate-400">No evidence uploaded — analysis runs on demo fixtures.</li>
           : <li className="text-xs text-slate-400">Results use only your evidence; stages that can't run are skipped.</li>}
         {evidence.map((e) => (
-          <li key={e.id} className="flex min-w-0 items-center gap-2 text-sm">
+          <li key={e.id} className="min-w-0 text-sm">
+            <div className="flex min-w-0 items-center gap-2">
             {e.ref && <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[0.7rem] text-slate-600" title="evidence id">{e.ref}</span>}
             <SourceBadge type={e.kind} />
             <span className="min-w-0 flex-1 truncate" title={`${e.filename} · sha256 ${e.sha256 ?? 'n/a'}`}>{e.filename}</span>
             <span className="shrink-0 text-xs text-slate-400">{(e.size_bytes / 1024 / 1024).toFixed(1)} MB</span>
             <button onClick={() => remove(e.id)} disabled={running}
               className="shrink-0 text-xs text-slate-400 hover:text-red-600 disabled:opacity-40">remove</button>
+            </div>
+            {evidenceNote(e) && <p className="mt-0.5 pl-1 text-[0.75rem] text-slate-400">{evidenceNote(e)}</p>}
+            {(e.details?.upload_warnings ?? []).map((w) => <p key={w} className="mt-0.5 pl-1 text-[0.75rem] text-amber-700">⚠ {w}</p>)}
           </li>
         ))}
       </ul>

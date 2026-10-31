@@ -20,6 +20,9 @@ function flagsFor(event, conflicts) {
 
 export default function IncidentTimeline({ timeline, time, selectedObs, onFocus, observationsById, eventAnalysis, conflicts }) {
   const [selected, setSelected] = useState(null)
+  const [sources, setSources] = useState([]) // empty = every source
+  const [flaggedOnly, setFlaggedOnly] = useState(false)
+  const [query, setQuery] = useState('')
   if (!timeline) return <Panel title="Incident Timeline">Loading…</Panel>
 
   const events = [...timeline.events].sort((a, b) => a.t_start_s - b.t_start_s)
@@ -32,6 +35,10 @@ export default function IncidentTimeline({ timeline, time, selectedObs, onFocus,
   const frac = (t) => (Math.min(Math.max(t, tMin), tMax) - tMin) / (tMax - tMin)
   const pct = (t) => `${frac(t) * 100}%`
   const current = events.find((e) => e.id === selected)
+  const q = query.trim().toLowerCase()
+  const shown = events.filter((e) => (!sources.length || e.source_types.some((s) => sources.includes(s)))
+    && (!flaggedOnly || flagsFor(e, conflicts).length > 0) && (!q || e.label.toLowerCase().includes(q)))
+  const toggleSource = (s) => setSources(sources.includes(s) ? sources.filter((x) => x !== s) : [...sources, s])
 
   const pick = (e) => {
     const closing = selected === e.id
@@ -48,8 +55,22 @@ export default function IncidentTimeline({ timeline, time, selectedObs, onFocus,
           <a href="#contradictions" className="ml-1 font-semibold underline">Open the Contradiction Explorer</a>
         </div>
       )}
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search events…" aria-label="Search events"
+          className="w-44 rounded border border-slate-200 bg-white px-2 py-1" />
+        {['sensor', 'video', 'witness'].map((s) => (
+          <button key={s} onClick={() => toggleSource(s)} aria-pressed={sources.includes(s)}
+            className={`rounded-full border px-2.5 py-0.5 capitalize ${sources.includes(s) ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>{s}</button>
+        ))}
+        {(conflicts?.conflicts.length ?? 0) > 0 && (
+          <label className="flex items-center gap-1 text-slate-600"><input type="checkbox" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.target.checked)} />Only events with open issues</label>
+        )}
+        <span className="ml-auto text-slate-400">{shown.length === events.length ? `${events.length} events` : `${shown.length} of ${events.length} shown`}</span>
+        {(sources.length > 0 || flaggedOnly || q) && <button onClick={() => { setSources([]); setFlaggedOnly(false); setQuery('') }} className="text-sky-700 hover:underline">Clear</button>}
+      </div>
+      {shown.length === 0 && <p className="rounded border border-dashed border-slate-300 p-3 text-xs text-slate-500">No events match these filters.</p>}
       <ul className="space-y-1">
-        {events.map((e) => {
+        {shown.map((e) => {
           const highlighted = e.id === selected || e.observation_ids.some((id) => selectedObs.includes(id))
           const flags = flagsFor(e, conflicts)
           return (

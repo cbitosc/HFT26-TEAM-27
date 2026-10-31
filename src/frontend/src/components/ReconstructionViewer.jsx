@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import CameraTrajectories from './CameraTrajectories'
 import Panel from './Panel'
+import ObservedInferredChart from './ObservedInferredChart'
 import ReconstructionTrace, { isObservedSource } from './ReconstructionTrace'
 
 const SIGNAL_COLORS = { red: '#dc2626', yellow: '#eab308', green: '#16a34a' }
@@ -273,7 +274,7 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
       )}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_21rem]">
       <div className="min-w-0">
-      <svg viewBox={`${cx - E} ${-cy - E} ${2 * E} ${2 * E}`} className="mx-auto block aspect-square w-full max-w-xl rounded bg-lime-50">
+      <svg viewBox={`${cx - E} ${-cy - E} ${2 * E} ${2 * E}`} className="mx-auto block aspect-square w-full max-w-2xl rounded bg-lime-50">
         {/* World coordinates: +y is north, so flip the y axis. */}
         <g transform="scale(1,-1)">
           {junction && <>
@@ -375,6 +376,8 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
           {playing ? 'Pause' : 'Play'}
         </button>
         <button onClick={() => step(1)} aria-label="Step forward" className="rounded border border-slate-200 px-2 py-1 text-xs">▶</button>
+        <button onClick={() => seek(data.t_min_s)} title="Jump to the start" className="rounded border border-slate-200 px-2 py-1 text-xs">⏮ Start</button>
+        {data.collision && <button onClick={() => seek(data.collision.t_s)} title="Jump to the inferred impact" className="rounded border border-red-300 px-2 py-1 text-xs text-red-700">Impact</button>}
         <div className="relative min-w-40 flex-1 basis-full sm:basis-0">
           <input type="range" min={data.t_min_s} max={data.t_max_s} step={0.1} value={time} aria-label="Time"
             onChange={(e) => { setPlaying(false); onTimeChange(Number(e.target.value)) }} className="w-full" />
@@ -393,6 +396,7 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
         </select>
         <span className="w-16 text-right font-mono text-xs">t={time.toFixed(1)}s</span>
       </div>
+      <p className="mt-1 text-[0.75rem] text-slate-400">Click the controls, then Space to play or pause and ← → to step. Click a vehicle to trace it.</p>
       <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-600">
         {schematic && <span>{data.vehicles.length} tracks · {visible.length} visible at this time</span>}
         {(schematic ? visible.slice(0, 6) : data.vehicles).map((v) => (
@@ -443,6 +447,9 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
       </div>
       <ReconstructionTrace data={data} time={time} selected={selected} onSelect={setSelected} position={selectedPos}
         moments={moments} observationsById={observationsById} onSeek={seek} schematic={schematic} onFocus={onFocus} />
+      </div>
+      <div className="mt-4">
+        <ObservedInferredChart data={data} time={time} onSeek={seek} selected={selected} onSelect={setSelected} />
       </div>
     </Panel>
   )

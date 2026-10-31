@@ -32,6 +32,12 @@ export default function Overview({ results, run, onOpen }) {
 
   return (
     <div className="space-y-4">
+      {!run && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          <span>No analysis has been run yet, so this is the bundled demo. Add your evidence and run the analysis to see your own case.</span>
+          <button onClick={() => onOpen('evidence')} className="rounded bg-sky-700 px-3 py-1 text-xs font-medium text-[#fff] hover:bg-sky-800">Go to Evidence</button>
+        </div>
+      )}
       <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900">
         This is a reconstruction of what <b>may</b> have happened, built from the evidence supplied. Every item is labelled as
         observed, reported, derived or AI-inferred. It is decision support, not a legal finding.

@@ -4,6 +4,7 @@ import ContradictionExplorer from './components/ContradictionExplorer'
 import EventAnalysis from './components/EventAnalysis'
 import EvidenceManager from './components/EvidenceManager'
 import IncidentTimeline from './components/IncidentTimeline'
+import Metrics from './components/Metrics'
 import Overview from './components/Overview'
 import ReconstructionViewer from './components/ReconstructionViewer'
 
@@ -13,6 +14,7 @@ const TABS = [
   { id: 'timeline', label: 'Timeline' },
   { id: 'contradictions', label: 'Contradictions' },
   { id: 'reconstruction', label: 'Reconstruction' },
+  { id: 'metrics', label: 'Metrics' },
   { id: 'footage', label: 'Footage' },
 ]
 const THEME_KEY = 'theme'
@@ -43,6 +45,16 @@ export default function App() {
   }, [theme])
 
   const open = useCallback((id) => { window.location.hash = id }, [])
+  // 1-7 jump between tabs (not while typing in a field).
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) || e.target.isContentEditable) return
+      const tab = TABS[Number(e.key) - 1]
+      if (tab) open(tab.id)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
   useEffect(() => {
     const onHash = () => setTab(tabFromHash())
     window.addEventListener('hashchange', onHash)
@@ -99,7 +111,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
-      <header className="bg-[#0f172a] text-[#fff]">
+      <header className="sticky top-0 z-20 bg-[#0f172a] text-[#fff]">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-3">
           <div className="min-w-0">
             <h1 className="text-lg font-semibold leading-tight">Incident Reconstruction</h1>
@@ -111,6 +123,8 @@ export default function App() {
             {analysing && <span className="flex items-center gap-1.5 rounded-full bg-[#0ea5e9]/20 px-2.5 py-1 text-[#bae6fd]">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#7dd3fc]" />Analysing…</span>}
             {run && <span>last run {run.run_id}</span>}
+            <a href="/api/report?format=markdown&narrative=false" target="_blank" rel="noreferrer" title="Open the investigator report (Markdown, with citations)"
+              className="rounded-full border border-[#334155] px-2.5 py-1 hover:bg-[#1e293b]">Report</a>
             <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} role="switch" aria-checked={theme === 'dark'}
               aria-label="Dark mode" title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               className="flex items-center gap-1.5 rounded-full border border-[#334155] px-2.5 py-1 hover:bg-[#1e293b]">
@@ -126,7 +140,7 @@ export default function App() {
             const active = tab === t.id
             const n = counts[t.id]
             return (
-              <button key={t.id} role="tab" aria-selected={active} onClick={() => open(t.id)}
+              <button key={t.id} role="tab" aria-selected={active} onClick={() => open(t.id)} title={`${t.label} (press ${TABS.indexOf(t) + 1})`}
                 className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors ${active ? 'border-sky-400 text-[#fff]' : 'border-transparent text-[#94a3b8] hover:text-[#e2e8f0]'}`}>
                 {t.label}
                 {n != null && n !== 0 && (
@@ -155,6 +169,7 @@ export default function App() {
         {pane('contradictions', <ContradictionExplorer report={results?.conflicts} observationsById={observationsById} onFocus={focus} />)}
         {pane('reconstruction', <ReconstructionViewer data={results?.reconstruction} time={time} onTimeChange={setTime}
           timeline={results?.timeline} conflicts={results?.conflicts} observationsById={observationsById} onFocus={focus} />)}
+        {pane('metrics', <Metrics results={results} run={run} onOpen={open} />)}
         {pane('footage', <EventAnalysis data={results?.eventAnalysis} time={time} onTimeChange={setTime} />)}
       </main>
       <footer className="mx-auto max-w-7xl px-4 pb-6 text-[0.75rem] text-slate-400">
