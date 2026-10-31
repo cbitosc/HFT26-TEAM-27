@@ -236,7 +236,7 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
 
   const labels = layoutLabels([
     ...current.map(({ v, p }) => ({
-      key: v.vehicle_id, x: p.x_m, y: -p.y_m, color: '#0f172a',
+      key: v.vehicle_id, x: p.x_m, y: -p.y_m, color: 'var(--color-slate-900)',
       text: `${v.vehicle_id}${p.speed_kmh != null ? ` · ${p.speed_kmh.toFixed(0)} km/h` : ''}`,
     })),
     ...(showCollision ? [{ key: 'collision', x: data.collision.x_m, y: -data.collision.y_m + 2 * fs, color: '#b91c1c', side: 'left',
@@ -271,8 +271,8 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
         {/* World coordinates: +y is north, so flip the y axis. */}
         <g transform="scale(1,-1)">
           {junction && <>
-          <rect x={-R} y={-half} width={2 * R} height={2 * half} fill="#cbd5e1" />
-          <rect x={-half} y={-R} width={2 * half} height={2 * R} fill="#cbd5e1" />
+          <rect x={-R} y={-half} width={2 * R} height={2 * half} fill="var(--color-slate-300)" />
+          <rect x={-half} y={-R} width={2 * half} height={2 * R} fill="var(--color-slate-300)" />
           <line x1={-R} y1={0} x2={-half} y2={0} stroke="white" strokeWidth={0.2} strokeDasharray="2 2" />
           <line x1={half} y1={0} x2={R} y2={0} stroke="white" strokeWidth={0.2} strokeDasharray="2 2" />
           <line x1={0} y1={-R} x2={0} y2={-half} stroke="white" strokeWidth={0.2} strokeDasharray="2 2" />
@@ -296,7 +296,7 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
 
           {roadBand && (
             <g>
-              <rect x={roadBand.x0} y={cy - E} width={roadBand.x1 - roadBand.x0} height={2 * E} fill="#cbd5e1" fillOpacity={0.55} />
+              <rect x={roadBand.x0} y={cy - E} width={roadBand.x1 - roadBand.x0} height={2 * E} fill="var(--color-slate-300)" fillOpacity={0.55} />
             </g>
           )}
 
@@ -341,16 +341,16 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
 
         </g>
 
-        {junction && <text x={half + 1 * s} y={-E + 4 * s} fontSize={2.5 * s} fill="#475569">{roads?.ns}</text>}
-        {junction && <text x={-E + 1 * s} y={half + 3 * s} fontSize={2.5 * s} fill="#475569">{roads?.ew}</text>}
-        <text x={cx - E + 1 * s} y={-cy + E - 2 * s} fontSize={2.5 * s} fill="#475569">N ↑</text>
-        {roadBand && <text x={cx - E + 1 * s} y={-cy - E + 3 * s} fontSize={2 * s} fill="#64748b">grey band: road extent assumed from where vehicles were seen</text>}
+        {junction && <text x={half + 1 * s} y={-E + 4 * s} fontSize={2.5 * s} fill="var(--color-slate-600)">{roads?.ns}</text>}
+        {junction && <text x={-E + 1 * s} y={half + 3 * s} fontSize={2.5 * s} fill="var(--color-slate-600)">{roads?.ew}</text>}
+        <text x={cx - E + 1 * s} y={-cy + E - 2 * s} fontSize={2.5 * s} fill="var(--color-slate-600)">N ↑</text>
+        {roadBand && <text x={cx - E + 1 * s} y={-cy - E + 3 * s} fontSize={2 * s} fill="var(--color-slate-500)">grey band: road extent assumed from where vehicles were seen</text>}
         {labels.map((l) => (
           <g key={l.key}>
             <line x1={l.ax} y1={l.ay} x2={l.side === 'left' ? l.x + l.w + 0.3 * fs : l.x - 0.3 * fs} y2={l.y - l.h * 0.45}
-              stroke="#64748b" strokeWidth={0.12 * Math.max(s, 0.4)} />
+              stroke="var(--color-slate-500)" strokeWidth={0.12 * Math.max(s, 0.4)} />
             <rect x={l.x - 0.3 * fs} y={l.y - l.h * 0.9} width={l.w + 0.6 * fs} height={l.h} rx={0.3 * fs}
-              fill="white" fillOpacity={0.85} />
+              fill="var(--color-white)" fillOpacity={0.85} />
             <text x={l.x} y={l.y - l.h * 0.2} fontSize={fs} fontWeight="600" fill={l.color}>{l.text}</text>
           </g>
         ))}

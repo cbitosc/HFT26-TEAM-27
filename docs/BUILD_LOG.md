@@ -589,3 +589,11 @@ Why: one long page made the four required dashboard components (Evidence Manager
 - `ReconstructionViewer.jsx`: a schematic plan opens at its first track (was an empty map at t=2.0 s).
 
 Checked in the browser (1280 px): overview, hash navigation, tab state, reconstruction with trace side panel. `pytest` 148 passed; `npm run build` OK.
+
+## 2026-10-31 · Dark mode
+
+Toggle (sun/moon switch) in the top right of the header. First visit follows the system setting; the choice is saved in `localStorage` (reads/writes wrapped, works without storage) and applied by a tiny inline script in `index.html` before first paint, so there is no light flash.
+
+How: `.dark` class on `<html>`. Instead of a `dark:` variant on every utility, `index.css` inverts the neutral Tailwind scale (and `white`) under `.dark` and re-derives the tinted shades (amber, emerald, red, sky, violet, yellow, lime, rose, blue) on a dark base, so every existing component is themed without edits. The header and tab bar use fixed colours (always dark). The reconstruction map's road, labels and text use theme variables so they follow the mode. `ReconstructionViewer.jsx` colours only; no logic change.
+
+Checked in the browser: toggle, persistence, overview and reconstruction in dark, back to light. Build OK; `pytest` unaffected (frontend only).

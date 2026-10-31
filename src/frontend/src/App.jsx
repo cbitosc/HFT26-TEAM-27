@@ -15,6 +15,14 @@ const TABS = [
   { id: 'reconstruction', label: 'Reconstruction' },
   { id: 'footage', label: 'Footage' },
 ]
+const THEME_KEY = 'theme'
+const initialTheme = () => {
+  try {
+    const saved = localStorage.getItem(THEME_KEY)
+    if (saved === 'dark' || saved === 'light') return saved
+  } catch { /* storage blocked: fall back to the system setting */ }
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
 const tabFromHash = () => {
   const id = window.location.hash.slice(1)
   return TABS.some((t) => t.id === id) ? id : 'overview'
@@ -28,6 +36,11 @@ export default function App() {
   const [selectedObs, setSelectedObs] = useState([])
   const [tab, setTab] = useState(tabFromHash)
   const [analysing, setAnalysing] = useState(false)
+  const [theme, setTheme] = useState(initialTheme)
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark')
+    try { localStorage.setItem(THEME_KEY, theme) } catch { /* not persisted */ }
+  }, [theme])
 
   const open = useCallback((id) => { window.location.hash = id }, [])
   useEffect(() => {
@@ -85,18 +98,26 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
-      <header className="bg-slate-900 text-white">
+      <header className="bg-[#0f172a] text-[#fff]">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-3">
           <div className="min-w-0">
             <h1 className="text-lg font-semibold leading-tight">Incident Reconstruction</h1>
-            <p className="truncate text-xs text-slate-400">
+            <p className="truncate text-xs text-[#94a3b8]">
               {results?.timeline.incident_id ?? '—'} · reference time {results?.timeline.reference_time ?? '—'}
             </p>
           </div>
-          <div className="flex items-center gap-3 text-xs text-slate-300">
-            {analysing && <span className="flex items-center gap-1.5 rounded-full bg-sky-500/20 px-2.5 py-1 text-sky-200">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-300" />Analysing…</span>}
+          <div className="flex items-center gap-3 text-xs text-[#cbd5e1]">
+            {analysing && <span className="flex items-center gap-1.5 rounded-full bg-[#0ea5e9]/20 px-2.5 py-1 text-[#bae6fd]">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#7dd3fc]" />Analysing…</span>}
             {run && <span>last run {run.run_id}</span>}
+            <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} role="switch" aria-checked={theme === 'dark'}
+              aria-label="Dark mode" title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              className="flex items-center gap-1.5 rounded-full border border-[#334155] px-2.5 py-1 hover:bg-[#1e293b]">
+              <span aria-hidden>{theme === 'dark' ? '☾' : '☀'}</span>
+              <span className="relative h-4 w-7 rounded-full bg-[#334155]">
+                <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-[#fff] transition-all ${theme === 'dark' ? 'left-3.5' : 'left-0.5'}`} />
+              </span>
+            </button>
           </div>
         </div>
         <nav className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-3" role="tablist" aria-label="Dashboard sections">
@@ -105,10 +126,10 @@ export default function App() {
             const n = counts[t.id]
             return (
               <button key={t.id} role="tab" aria-selected={active} onClick={() => open(t.id)}
-                className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors ${active ? 'border-sky-400 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
+                className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors ${active ? 'border-sky-400 text-[#fff]' : 'border-transparent text-[#94a3b8] hover:text-[#e2e8f0]'}`}>
                 {t.label}
                 {n != null && n !== 0 && (
-                  <span className={`rounded-full px-1.5 text-[10px] font-medium leading-4 ${t.id === 'contradictions' && high ? 'bg-red-500 text-white' : 'bg-slate-700 text-slate-200'}`}>{n}</span>
+                  <span className={`rounded-full px-1.5 text-[10px] font-medium leading-4 ${t.id === 'contradictions' && high ? 'bg-[#ef4444] text-[#fff]' : 'bg-[#334155] text-[#e2e8f0]'}`}>{n}</span>
                 )}
               </button>
             )
