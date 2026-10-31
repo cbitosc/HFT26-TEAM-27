@@ -740,3 +740,11 @@ Tests: `tests/test_linking.py` +8 (stop detection, parked/creeping vehicles, dup
 - "Collision involving white sedan" when the AI named only one vehicle ("between" needs two); unchanged for two or more.
 - Contract and hand-off notes updated for the road direction, linked tracks and stops from tracks.
 Tests: +1 (`test_plan_geometry.py`: names and colours). `pytest` 206 passed; evaluation 32/32 offline.
+
+## 2026-10-31 · Accuracy and reconstruction pass 5: a calibrated map keeps the AI-sighted vehicles
+
+Gap found while checking what happens when the user later declares a marking standard: the metric map (`reconstruct_ground_from_camera`) only knew motion-tracked vehicles. On the night clip that is one vehicle, so calibrating would have shrunk the map from nine vehicles to one.
+
+Now (`fixed_box_observations(..., cal=)`, `reconstruct_ground_from_camera`): when the view is calibrated (automatic or manual) each AI-linked track also carries `ground_points` (metres on the road). On the metric map they are drawn as `estimated` points with the observation's own confidence (0.3-0.45) and **no speeds** (the model's boxes are seconds apart); measured motion tracks are unchanged (`tracked`, 0.6, speeds). The note says how many are AI-sighted.
+
+Checked end to end on the night clip in isolated storage with a throwaway manual calibration (arbitrary reference points, so its numbers mean nothing; removed afterwards): 10 vehicles, 1 measured and 9 inferred without speeds. Declaring `de_motorway` for that clip correctly changed nothing (0 lane lines show an 18 m period): the standard does not match that road and it does not guess. Test: `tests/test_linking.py` (calibrated view keeps AI-sighted vehicles, no speeds invented). `pytest` 207 passed; evaluation 32/32 offline.

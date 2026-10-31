@@ -309,3 +309,37 @@ def test_a_pedestrian_is_not_a_vehicle_track():
     rows = [(float(i), [("person", 300 + 20 * i, 600)]) for i in range(5)]
     ev, info, analysed = _analysed(rows)
     assert fixed_box_observations(ev, info, analysed, [], None) == ([], [])
+
+
+# ---------------------------------------------------------------------------------------------- calibrated views keep them
+
+def test_a_calibrated_view_keeps_the_ai_sighted_vehicles_on_the_metric_map_without_inventing_speeds():
+    from datetime import datetime, timezone
+    from app.modules.ingestion import calibration, fixed_box_observations
+    from app.modules.reconstruction.camera import reconstruct_ground_from_camera
+    from app.modules.timeline import build_timeline
+    from app.schemas import Observation, ObservationSet, SourceRef
+
+    # a manual calibration: four image points with known road positions (a 20 m x 10 m patch of road)
+    cal = calibration.manual_calibration(1, [[200, 1000], [1700, 1000], [1500, 300], [400, 300]],
+                                         [[0, 0], [10, 0], [10, 20], [0, 20]])
+    rows = [(float(i), [("white car", 150 + 40 * i, 900 - 60 * i)]) for i in range(6)]
+    ev, info, analysed = _analysed(rows)
+    tracks, _ = fixed_box_observations(ev, info, analysed, [], None, cal=cal)
+    (ai,) = tracks
+    assert ai.attributes["calibration"] == "manual" and len(ai.attributes["ground_points"]) >= 3
+    assert "mean_speed_kmh" not in ai.attributes and "speed_points" not in ai.attributes   # coarse boxes: no speeds
+
+    measured = Observation(id="m1", source_type="video", source_ref=SourceRef(evidence_id="ev_v", file="v.mp4", locator="frames:1-9"),
+                           t_rel_s=1.0, action="track", confidence=0.6,
+                           attributes={"track_id": "T1-001", "view": 1, "camera": "fixed", "units": "px", "view_box": [0, 0, W, H],
+                                       "points": [], "calibration": "manual", "mean_speed_kmh": 62.0,
+                                       "ground_points": [[1.0 + 0.5 * k, 3.0, 2.0 + 8.0 * k] for k in range(5)],
+                                       "speed_points": [[1.0 + 0.5 * k, 62.0] for k in range(5)]})
+    sets = [ObservationSet(source_type="video", evidence_id="ev_v", producer="t", generated_at=datetime.now(timezone.utc), observations=[measured, ai])]
+    rec = reconstruct_ground_from_camera(sets, build_timeline(sets))
+    by = {v.vehicle_id: v for v in rec.vehicles}
+    assert set(by) == {"T1-001", "B1-001"} and rec.scene.units == "m"
+    assert all(p.source == "tracked" and p.speed_kmh == 62.0 for p in by["T1-001"].track)           # measured: as before
+    assert all(p.source == "estimated" and p.speed_kmh is None and p.confidence == ai.confidence for p in by["B1-001"].track)
+    assert "AI-sighted" in rec.note and by["B1-001"].label.startswith("B1-001 · white")

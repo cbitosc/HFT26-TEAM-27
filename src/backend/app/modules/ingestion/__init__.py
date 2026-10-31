@@ -134,6 +134,7 @@ def analyze_video(evidence: Evidence, client: VisionClient | None = None,
     # Fixed cameras: vehicle trajectories from the pixels themselves (OpenCV only, no model, no key).
     track_obs: list[Observation] = []
     roads: dict[int, dict] = {}
+    cals: dict = {}
     views: list[tuple[int, int, int, int]] = []
     if mode == "fixed" and TRACKING and frames:
         report(0, 0, "tracking vehicles")
@@ -238,7 +239,7 @@ def analyze_video(evidence: Evidence, client: VisionClient | None = None,
         observations += box_tracks(evidence, info, analysed)
     elif mode == "fixed" and len(views) == 1 and len(track_obs) < FEW_MOTION_TRACKS:
         try:
-            boxed, stops = fixed_box_observations(evidence, info, raw, track_obs, roads.get(1), stops_known=observations)
+            boxed, stops = fixed_box_observations(evidence, info, raw, track_obs, roads.get(1), stops_known=observations, cal=cals.get(1))
         except Exception as e:  # noqa: BLE001
             boxed, stops = [], []
             warnings.append(f"Linking the vision model's vehicle boxes failed ({type(e).__name__}: {e}); no AI-sighted tracks were added.")
@@ -327,12 +328,14 @@ def box_tracks(evidence: Evidence, info: VideoInfo, analysed: list[tuple[Frame, 
 
 def fixed_box_observations(evidence: Evidence, info: VideoInfo, analysed: list[tuple[Frame, FrameAnalysis]],
                            existing: list[Observation], road: dict | None,
-                           stops_known: list[Observation] | None = None) -> tuple[list[Observation], list[Observation]]:
+                           stops_known: list[Observation] | None = None, cal=None) -> tuple[list[Observation], list[Observation]]:
     """(tracks, stops) for a fixed camera from the vision model's boxes (see linking.py).
 
     One track per vehicle seen in at least two keyframes. A vehicle that moved and then stayed at one place across
     several keyframes also gives a "stopped" observation, with the keyframes that show it; vehicles that never moved
-    (parked) are not incident events, and a stop the pixel check already confirmed (`stops_known`) is not repeated."""
+    (parked) are not incident events, and a stop the pixel check already confirmed (`stops_known`) is not repeated.
+    With a calibrated view (`cal`) each track also carries its positions on the road in metres (`ground_points`), as
+    inferred positions: the model's boxes are seconds apart, so no speeds are derived from them."""
     frames = []
     for frame, a in sorted(analysed, key=lambda fa: fa[0].t_s):
         sights = []
@@ -364,6 +367,15 @@ def fixed_box_observations(evidence: Evidence, info: VideoInfo, analysed: list[t
         for s in tr.sights:
             labels[s.label] = labels.get(s.label, 0) + 1
         direction = next((s.direction for s in reversed(tr.sights) if s.direction), None)
+        metric = {}
+        if cal is not None and cal.ok:
+            ground = []
+            for t, x, y in pts:
+                g = cal.ground(x, y) if cal.usable(y, info.height) and y < info.height - 3 else None
+                if g is not None:
+                    ground.append([t, None if g[0] is None else round(g[0], 2), round(g[1], 2)])
+            if len(ground) >= 3:
+                metric = {"calibration": cal.method, "ground_points": ground}
         out.append(Observation(
             id=f"vid_{evidence.id}_box_{n:03d}", source_type=SourceType.video,
             source_ref=SourceRef(evidence_id=evidence.id, file=evidence.filename,
@@ -375,7 +387,7 @@ def fixed_box_observations(evidence: Evidence, info: VideoInfo, analysed: list[t
                         "view_box": [0, 0, info.width, info.height], "grid": [[0, 0, info.width, info.height]],
                         "label": tr.label, "labels": dict(sorted(labels.items(), key=lambda kv: -kv[1])), "points": pts,
                         "sightings": len(tr.sights), "source": "AI vehicle boxes linked across keyframes",
-                        **({"direction": direction} if direction else {}), **(road or {})},
+                        **({"direction": direction} if direction else {}), **(road or {}), **metric},
             confidence=round(min(0.45, 0.3 + 0.04 * len(tr.sights)), 2)))
     return out, [o for o in stops if o is not None]
 

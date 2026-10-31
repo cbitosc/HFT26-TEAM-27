@@ -129,11 +129,14 @@ def reconstruct_ground_from_camera(observation_sets: list[ObservationSet], timel
     view, chosen = max(per_view.items(), key=lambda kv: len(kv[1]))
     lateral_known = all(p[1] is not None for o in chosen for p in o.attributes["ground_points"])
     vehicles = []
+    n_ai = 0
     for o in chosen:
         pts = [p for p in o.attributes["ground_points"] if p[2] is not None]
         if len(pts) < 2:
             continue
         speeds = {round(t, 3): s for t, s in o.attributes.get("speed_points", [])}
+        ai = _is_ai(o)  # the model's boxes read off the road: inferred positions, no speeds
+        n_ai += ai
         track = []
         for k, (t, x, y) in enumerate(pts):
             a, b = pts[max(0, k - 1)], pts[min(len(pts) - 1, k + 1)]
@@ -141,13 +144,16 @@ def reconstruct_ground_from_camera(observation_sets: list[ObservationSet], timel
             dy = b[2] - a[2]
             track.append(TrackPoint(t_s=t, x_m=round(x or 0.0, 2), y_m=round(y, 2),
                                     heading_deg=round(math.degrees(math.atan2(dx, dy)) % 360, 1),
-                                    speed_kmh=speeds.get(round(t, 3)), source="tracked", confidence=0.6))
+                                    speed_kmh=None if ai else speeds.get(round(t, 3)),
+                                    source="estimated" if ai else "tracked", confidence=o.confidence if ai else 0.6))
         mean = o.attributes.get("mean_speed_kmh")
         vehicles.append(VehicleTrack(
-            vehicle_id=o.attributes["track_id"], label=f"{o.attributes['track_id']}" + (f" · ~{mean:g} km/h" if mean else ""),
-            color=VIEW_COLORS[(view - 1) % len(VIEW_COLORS)],
-            description=f"{o.attributes.get('direction', '')}; tracked on camera view {view}, "
-                        f"{o.attributes.get('calibration', '').replace('_', ' ')} calibration",
+            vehicle_id=o.attributes["track_id"], label=_name(o, view) if ai else f"{o.attributes['track_id']}" + (f" · ~{mean:g} km/h" if mean else ""),
+            color=AI_COLORS[(n_ai - 1) % len(AI_COLORS)] if ai else VIEW_COLORS[(view - 1) % len(VIEW_COLORS)],
+            description=(f"AI-sighted vehicle, {o.attributes.get('direction', '')}; positions on the road from the model's boxes "
+                         f"(inferred, no speed), {o.attributes.get('calibration', '').replace('_', ' ')} calibration" if ai else
+                         f"{o.attributes.get('direction', '')}; tracked on camera view {view}, "
+                         f"{o.attributes.get('calibration', '').replace('_', ' ')} calibration"),
             track=track, source_observation_ids=[o.id]))
     if not vehicles:
         return None
@@ -158,6 +164,7 @@ def reconstruct_ground_from_camera(observation_sets: list[ObservationSet], timel
     others = sorted(v for v in per_view if v != view)
     note = (f"Reconstructed from camera view {view} (calibrated): {len(vehicles)} vehicle track(s) on the road plane."
             + ("" if lateral_known else " Lateral positions unknown (lane width not measured), drawn on one line.")
+            + (f" {n_ai} of them are AI-sighted (the vision model's boxes seconds apart): inferred positions, no speeds." if n_ai else "")
             + (f" Views {', '.join(map(str, others))} are also calibrated but have their own road frame."
                if others else "") + " Stationary vehicles are not tracked by motion.")
     return Reconstruction(
