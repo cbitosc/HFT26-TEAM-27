@@ -357,7 +357,7 @@ export default function ReconstructionViewer({ data, time, onTimeChange, timelin
 
         {junction && <text x={half + 1 * s} y={-E + 4 * s} fontSize={2.5 * s} fill="var(--color-slate-600)">{roads?.ns}</text>}
         {junction && <text x={-E + 1 * s} y={half + 3 * s} fontSize={2.5 * s} fill="var(--color-slate-600)">{roads?.ew}</text>}
-        <text x={cx - E + 1 * s} y={-cy + E - 2 * s} fontSize={2.5 * s} fill="var(--color-slate-600)">N ↑</text>
+        <text x={cx - E + 1 * s} y={-cy + E - 2 * s} fontSize={2.5 * s} fill="var(--color-slate-600)">{schematic ? '↑ away from camera' : 'N ↑'}</text>
         {roadBand && <text x={cx - E + 1 * s} y={-cy - E + 3 * s} fontSize={2 * s} fill="var(--color-slate-500)">grey band: road extent assumed from where vehicles were seen</text>}
         {labels.map((l) => (
           <g key={l.key}>

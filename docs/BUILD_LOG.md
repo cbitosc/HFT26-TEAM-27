@@ -691,3 +691,18 @@ Tests: `tests/test_generic_video_proxy.py` (11): whole-frame flow series, spike 
 At the user's request the main app (port 8000) now holds incident_dataset_03: the three files uploaded (video, frame index, motion proxy; EVID-004 to 006, numbers are never reused). The previous evidence (EVID-001 to 003) was deleted through the API (audited) after a backup copy to `storage/backup_before_dataset03/` (uploads, index and counter; run history in `storage/runs` was not touched). The AI answers cached while testing were copied into `storage/cache/vision` so the run reused them instead of calling the model again.
 
 Fix found while looking at the result: the single-source contradiction said the collision was "supported only by the dashcam" for a fixed camera. The label now follows the camera type recorded on the observations ("the camera footage" for a fixed camera, "the dashcam" otherwise). `tests/test_generic_video_proxy.py` +1; `pytest` 171 passed, evaluation 25/25 offline.
+
+## 2026-10-31 · Accuracy and reconstruction pass 1: road-aligned schematic plan
+
+Why: on a real night clip the schematic plan kept the camera's own frame (the assumed camera looks straight along the road), so a road running diagonally across the picture stayed diagonal and lanes were not parallel. Measured on a posed synthetic camera (pitch 22 degrees, yaw -20 degrees): vehicle paths came out 22-24 degrees off the road axis.
+
+What: the road's own direction is found from the picture and used to rectify the ground plane.
+- `ingestion/road_geometry.py`: line segments (LSD) from the vehicle-free background, RANSAC for the point where the lane lines, rails and kerbs meet, least-squares refinement. Rejected, never guessed, unless >= 5 segments, >= 3 distinct lines spanning >= 20% of the width and enough total length support it. A traffic cross-check vetoes it only when >= 3 long tracks mostly disagree (one car swerving across lanes must not veto a road: found on the night clip).
+- `reconstruction/plan.py`: pure geometry from the vanishing point (zero roll, centred optical axis, assumed ~60 degree field of view as before): rotation from the two vanishing directions, ground-plane intersection. Plan units stay schematic, no metres.
+- `ingestion/__init__.py`: `estimate_roads` per view from the tracker's background, vanishing point attached to track observations (`vanishing_point_px`, `road_geometry`); warnings say found / not found and why.
+- `reconstruction/camera.py`: schematic uses it when present, otherwise the old nominal camera exactly as before. All labelling guarantees unchanged (NOT calibrated / NOT to scale, every point `estimated`, confidence <= 0.3, no speeds, no impact point, depth ordering).
+- Frontend: the plan's up arrow reads "away from camera" instead of "N".
+
+Evidence: vanishing point within ~1 px of the true one on posed scenes (3 poses); with the true field of view the ground mapping is exact up to scale (0.2% pairwise-distance error) and 6-8% when the real field of view is 20-37% off, where the old nominal camera was 6-46% off; through the real pipeline the plan's path orientation error fell from 22-24 degrees to 0.2-2.5 degrees. New evaluation case `cctv_posed_schematic` (checks: labelled schematic, road-aligned note, proportions within 6% of the true road plane, paths within 6 degrees of the road axis); confirmed it fails when the feature is switched off. `scripts/synthetic.py` gains `camera_pose` / `render_cctv_pose` (a posed camera); `render_cctv` and the existing cases are untouched. Tests: `tests/test_plan_geometry.py` (11). `pytest` 182 passed; evaluation 32/32 offline.
+
+Not changed on purpose: the dashcam path, the calibrated (metric) path, the strict motion tracker, any contract field.

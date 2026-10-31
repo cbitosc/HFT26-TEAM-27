@@ -1,0 +1,65 @@
+{
+  "about": "Camera pitched and yawed: no calibration or km/h, but the schematic plan must be road-aligned and have the road's proportions (checked against the known pose).",
+  "collision": null,
+  "calibrated_views": [],
+  "speeds": [],
+  "plan_truth": {
+    "pose": {
+      "w": 640,
+      "h": 360,
+      "focal": 560.0,
+      "cam_height": 9.0,
+      "pitch_deg": 22.0,
+      "yaw_deg": -20.0
+    },
+    "vehicles": [
+      {
+        "lane_x": -1.875,
+        "z0": 22.0,
+        "speed_ms": 9.0,
+        "color": [
+          40,
+          40,
+          200
+        ]
+      },
+      {
+        "lane_x": 1.875,
+        "z0": 90.0,
+        "speed_ms": -12.0,
+        "color": [
+          200,
+          120,
+          40
+        ]
+      },
+      {
+        "lane_x": -5.6,
+        "z0": 30.0,
+        "speed_ms": 11.0,
+        "color": [
+          60,
+          160,
+          60
+        ]
+      },
+      {
+        "lane_x": 5.6,
+        "z0": 105.0,
+        "speed_ms": -14.0,
+        "color": [
+          200,
+          60,
+          160
+        ]
+      }
+    ]
+  },
+  "reconstruction": {
+    "schematic": true,
+    "road_aligned": true,
+    "min_points": 12,
+    "plan_error_max_pct": 6.0,
+    "max_path_angle_deg": 6.0
+  }
+}

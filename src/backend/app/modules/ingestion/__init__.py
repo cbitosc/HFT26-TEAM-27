@@ -36,6 +36,7 @@ from .video import (MOVING_CAMERA_SHARE, Frame, Track, VideoInfo, camera_motion_
                     ego_motion, encode_jpeg_b64, extract_frames, probe_video, select_keyframes, static_regions,
                     track_vehicles, with_followers)
 from . import calibration
+from .road_geometry import estimate_vanishing_point, traffic_agrees
 from .vision import PROMPTS, CameraMode, FrameAnalysis, VisionClient, VisionError
 
 # Ungated on Featherless; google/gemma-3-27b-it is gated (needs HuggingFace OAuth, else 403).
@@ -131,6 +132,7 @@ def analyze_video(evidence: Evidence, client: VisionClient | None = None,
 
     # Fixed cameras: vehicle trajectories from the pixels themselves (OpenCV only, no model, no key).
     track_obs: list[Observation] = []
+    roads: dict[int, dict] = {}
     views: list[tuple[int, int, int, int]] = []
     if mode == "fixed" and TRACKING and frames:
         report(0, 0, "tracking vehicles")
@@ -139,7 +141,8 @@ def analyze_video(evidence: Evidence, client: VisionClient | None = None,
         tracks = track_vehicles(evidence.stored_path, info, views, backgrounds=backgrounds)
         report(0, 0, "calibrating cameras")
         cals = calibrate_views(evidence, views, backgrounds)
-        track_obs = tracks_to_observations(evidence, info, tracks, views, cals)
+        roads = estimate_roads(views, backgrounds, tracks, warnings)
+        track_obs = tracks_to_observations(evidence, info, tracks, views, cals, roads)
         warnings.append(f"{len(track_obs)} vehicle track(s) from motion in {len(views)} camera view(s) "
                         "(stationary vehicles are not tracked by motion).")
         for v, cal in sorted(cals.items()):
@@ -229,7 +232,7 @@ def analyze_video(evidence: Evidence, client: VisionClient | None = None,
     if mode == "dashcam":
         observations += box_tracks(evidence, info, analysed)
     elif mode == "fixed" and len(views) == 1 and len(track_obs) < FEW_MOTION_TRACKS:
-        boxed = box_tracks(evidence, info, raw, fixed=True, existing=track_obs)
+        boxed = box_tracks(evidence, info, raw, fixed=True, existing=track_obs, road=roads.get(1))
         if boxed:
             observations += boxed
             warnings.append(f"Motion tracking found only {len(track_obs)} vehicle(s), so {len(boxed)} more coarse track(s) "
@@ -269,7 +272,7 @@ BOX_DUPLICATE_PX = 150.0  # a box track this close (and in time) to a motion tra
 
 def box_tracks(evidence: Evidence, info: VideoInfo, analysed: list[tuple[Frame, FrameAnalysis]],
                max_jump: float = 180.0, max_gap_s: float = 3.0, fixed: bool = False,
-               existing: list[Observation] | None = None) -> list[Observation]:
+               existing: list[Observation] | None = None, road: dict | None = None) -> list[Observation]:
     """Link the vision model's boxes for the same-looking vehicle across keyframes into coarse image-space tracks.
     Dashcams: camera-relative (the camera itself moves). Fixed cameras: absolute image positions (the box's bottom
     centre, where the vehicle meets the road), used when motion tracking found few vehicles, skipping boxes that
@@ -317,7 +320,7 @@ def box_tracks(evidence: Evidence, info: VideoInfo, analysed: list[tuple[Frame, 
                         "units": "px", "frame_size": [info.width, info.height], "fps": round(info.fps, 3),
                         "view_box": [0, 0, info.width, info.height], "grid": [[0, 0, info.width, info.height]],
                         "label": tr["label"], "points": pts, "source": "AI vehicle boxes linked across keyframes",
-                        **({"direction": tr["direction"]} if tr.get("direction") else {})},
+                        **({"direction": tr["direction"]} if tr.get("direction") else {}), **(road or {})},
             confidence=0.5 if not fixed else 0.35))
     return out
 
@@ -345,9 +348,36 @@ def calibrate_views(evidence: Evidence, views: list[tuple[int, int, int, int]],
     return out
 
 
+def estimate_roads(views: list[tuple[int, int, int, int]], backgrounds: dict, tracks: list[Track],
+                   warnings: list[str]) -> dict[int, dict]:
+    """Per view: where the road's lane lines, rails and kerbs meet (the vanishing point), in full-frame pixels, with the
+    quality of the evidence. It fixes the road's direction for the plan view; it is not a calibration (no metres). A view
+    is left out, with the reason in `warnings`, when the picture does not support it or the traffic does not follow it."""
+    roads: dict[int, dict] = {}
+    for v, (x0, y0, x1, y1) in enumerate(views, start=1):
+        bg = backgrounds.get(v)
+        if bg is None:
+            continue
+        vp, why = estimate_vanishing_point(bg)
+        if vp is None:
+            warnings.append(f"Camera view {v}: road direction not found ({why}); the schematic plan assumes a nominal camera.")
+            continue
+        local = [[(t, x - x0, y - y0) for t, x, y in tr.points] for tr in tracks if tr.view == v]
+        agrees, how = traffic_agrees((vp.x, vp.y), local, y1 - y0)
+        if not agrees:
+            warnings.append(f"Camera view {v}: lane lines suggest a road direction, but the traffic does not follow it "
+                            f"({how}); the schematic plan assumes a nominal camera.")
+            continue
+        roads[v] = {"vanishing_point_px": [round(vp.x + x0, 1), round(vp.y + y0, 1)],
+                    "road_geometry": {**vp.to_dict(), "traffic_check": how}}
+        warnings.append(f"Camera view {v}: road direction found from {vp.distinct_lines} lane lines / rails "
+                        f"(vanishing point at {vp.x + x0:.0f}, {vp.y + y0:.0f} px); used to straighten the schematic plan.")
+    return roads
+
+
 def tracks_to_observations(evidence: Evidence, info: VideoInfo, tracks: list[Track],
                            views: list[tuple[int, int, int, int]],
-                           cals: dict | None = None) -> list[Observation]:
+                           cals: dict | None = None, roads: dict | None = None) -> list[Observation]:
     """One compact observation per track (action "track"): all its points ride in attributes.points.
     Calibrated views add ground_points [[t, X_m, Y_m]], speed_points [[t, km/h]] and mean_speed_kmh."""
     longest = sorted(tracks, key=lambda tr: tr.points[-1][0] - tr.points[0][0], reverse=True)[:MAX_TRACKS]
@@ -380,7 +410,8 @@ def tracks_to_observations(evidence: Evidence, info: VideoInfo, tracks: list[Tra
                         "view_box": list(views[tr.view - 1]), "grid": [list(v) for v in views],
                         "direction": "towards camera" if y1 > y0 else "away from camera",
                         "mean_speed_px_s": round(dist / max(t1 - t0, 1e-6), 1),
-                        "points": [[round(t + T0_OFFSET_S, 3), x, y] for t, x, y in tr.points], **metric},
+                        "points": [[round(t + T0_OFFSET_S, 3), x, y] for t, x, y in tr.points], **metric,
+                        **(roads or {}).get(tr.view, {})},
             confidence=0.6,
         ))
     return out

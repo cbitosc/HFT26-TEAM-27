@@ -86,3 +86,66 @@ def render_cctv(path: Path, vehicles: list[dict], duration_s: float, fps: int = 
         writer.write(img)
     writer.release()
     return path
+
+
+# ----------------------------------------------------------------------------------------------------------
+# A fixed camera with a real pose: pitched down and yawed away from the road direction, principal point at the
+# image centre. Unlike render_cctv (level camera, road along the optical axis) this is what a CCTV camera on a
+# bridge or pole actually looks like, and it has exact ground truth for the road plane.
+
+def camera_pose(w: int, h: int, focal: float, cam_height: float, pitch_deg: float, yaw_deg: float):
+    """Return (project, vanishing_point). World: X right, Y up, Z along the road; ground is Y = 0 and the camera is
+    cam_height above it, at X = 0, Z = 0. project(X, Y, Z) -> (u, v) pixels or None behind the camera."""
+    th, ps = np.radians(pitch_deg), np.radians(yaw_deg)
+    d = np.array([np.sin(ps) * np.cos(th), -np.sin(th), np.cos(ps) * np.cos(th)])   # optical axis
+    right = np.array([np.cos(ps), 0.0, -np.sin(ps)])
+    up = np.cross(d, right)
+    cx, cy = w / 2, h / 2
+    cam = np.array([0.0, cam_height, 0.0])
+
+    def project(X: float, Y: float, Z: float):
+        v = np.array([X, Y, Z]) - cam
+        zc = float(v @ d)
+        if zc < 0.5:
+            return None
+        return cx + focal * float(v @ right) / zc, cy - focal * float(v @ up) / zc
+
+    road = np.array([0.0, 0.0, 1.0])
+    zc = float(road @ d)
+    vp = (cx + focal * float(road @ right) / zc, cy - focal * float(road @ up) / zc)
+    return project, vp
+
+
+def render_cctv_pose(path: Path, vehicles: list[dict], duration_s: float, fps: int = 12, w: int = 640, h: int = 360,
+                     focal: float = 560.0, cam_height: float = 7.0, pitch_deg: float = 22.0, yaw_deg: float = -20.0,
+                     lane_m: float = 3.75, dash_m: float = 6.0, gap_m: float = 12.0, solid_edges: bool = True) -> Path:
+    """Vehicles: {"lane_x": m, "z0": m, "speed_ms": +along the road, "color": (b, g, r)}. Lane lines are dashed, the road
+    edges solid. Returns the path; truth positions of a vehicle at time t are (lane_x, z0 + speed_ms * t)."""
+    project, vp = camera_pose(w, h, focal, cam_height, pitch_deg, yaw_deg)
+    road = np.full((h, w, 3), 92, np.uint8)
+    road[: max(0, int(vp[1]))] = (205, 205, 205)  # sky above the horizon (the road's vanishing point lies on it)
+
+    def quad(pts, colour):
+        pr = [project(*p) for p in pts]
+        if all(p is not None for p in pr):
+            cv2.fillPoly(road, [np.int32(np.round(pr))], colour, lineType=cv2.LINE_AA)
+
+    for lx in (-1.5 * lane_m, -0.5 * lane_m, 0.5 * lane_m, 1.5 * lane_m):
+        edge = solid_edges and abs(lx) > lane_m
+        for z in (np.arange(3.0, 220.0, 2.0) if edge else np.arange(3.0, 220.0, dash_m + gap_m)):
+            ln = 2.0 if edge else dash_m
+            quad([(lx - 0.1, 0, z), (lx + 0.1, 0, z), (lx + 0.1, 0, z + ln), (lx - 0.1, 0, z + ln)], (235, 235, 235))
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"MJPG"), fps, (w, h))
+    for i in range(int(duration_s * fps)):
+        t = i / fps
+        img = road.copy()
+        for v in sorted(vehicles, key=lambda v: -(v["z0"] + v["speed_ms"] * t)):
+            z = v["z0"] + v["speed_ms"] * t
+            corners = [project(v["lane_x"] + dx, dy, z + dz) for dx in (-0.9, 0.9) for dy in (0.0, 1.5) for dz in (0.0, 4.5)]
+            if any(c is None for c in corners):
+                continue
+            hull = cv2.convexHull(np.int32(np.round(corners)))
+            cv2.fillConvexPoly(img, hull, v.get("color", (40, 40, 200)))
+        writer.write(img)
+    writer.release()
+    return path

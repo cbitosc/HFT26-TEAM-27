@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import scenario as sc
-from synthetic import render_cctv, render_dashcam
+from synthetic import render_cctv, render_cctv_pose, render_dashcam
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "eval" / "cases"
@@ -26,6 +26,8 @@ RECONSTRUCTION = {"junction_side_impact": {"scene": "four_way_intersection", "mi
                   "gps_rear_end": {"scene": "metric", "min_vehicles": 2},
                   "cctv_motorway_speeds": {"scene": "metric", "min_vehicles": 3},
                   "cctv_no_standard": {"schematic": True},
+                  "cctv_posed_schematic": {"schematic": True, "road_aligned": True, "min_points": 12, "plan_error_max_pct": 6.0,
+                                           "max_path_angle_deg": 6.0},
                   "dashcam_brake": {"empty": True}}
 
 
@@ -156,6 +158,28 @@ def cctv_cases() -> None:
     shutil.copy(ev / "cctv.avi", ev2 / "cctv.avi")
 
 
+# A camera that is pitched down and turned away from the road (a bridge or pole), as real CCTV is. The plan must come
+# out road-aligned: lanes parallel, vehicle paths straight, proportions right. Judged against the known camera pose.
+POSE = {"w": 640, "h": 360, "focal": 560.0, "cam_height": 9.0, "pitch_deg": 22.0, "yaw_deg": -20.0}
+POSED_VEHICLES = [
+    {"lane_x": -1.875, "z0": 22.0, "speed_ms": 9.0, "color": (40, 40, 200)},
+    {"lane_x": 1.875, "z0": 90.0, "speed_ms": -12.0, "color": (200, 120, 40)},
+    {"lane_x": -5.6, "z0": 30.0, "speed_ms": 11.0, "color": (60, 160, 60)},
+    {"lane_x": 5.6, "z0": 105.0, "speed_ms": -14.0, "color": (200, 60, 160)},
+]
+
+
+def cctv_posed() -> None:
+    ev = _write("cctv_posed_schematic", {
+        "incident_id": "CASE-CCTV-POSED", "title": "Pole-mounted camera, road at an angle, no marking standard (synthetic)"},
+        {"about": "Camera pitched and yawed: no calibration or km/h, but the schematic plan must be road-aligned "
+                  "and have the road's proportions (checked against the known pose).",
+         "collision": None, "calibrated_views": [], "speeds": [],
+         "plan_truth": {"pose": POSE, "vehicles": POSED_VEHICLES}})
+    render_cctv_pose(ev / "cctv.avi", POSED_VEHICLES, duration_s=14.0, w=POSE["w"], h=POSE["h"], focal=POSE["focal"],
+                     cam_height=POSE["cam_height"], pitch_deg=POSE["pitch_deg"], yaw_deg=POSE["yaw_deg"])
+
+
 # ------------------------------------------------------------------ 5. dashcam brakes
 
 def dashcam_brake() -> None:
@@ -176,6 +200,6 @@ def dashcam_brake() -> None:
 
 
 if __name__ == "__main__":
-    for build in (junction_side_impact, gps_rear_end, cctv_cases, dashcam_brake):
+    for build in (junction_side_impact, gps_rear_end, cctv_cases, cctv_posed, dashcam_brake):
         build()
     print("\n".join(sorted(str(p.relative_to(ROOT)) for p in OUT.iterdir())))

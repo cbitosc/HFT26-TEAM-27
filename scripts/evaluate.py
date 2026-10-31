@@ -53,6 +53,43 @@ def run_case(client, config, case_dir: Path) -> dict:
             "warnings": [w for s in get("observations") for w in s["warnings"]]}
 
 
+def plan_shape_error(plan_truth: dict, out: dict):
+    """Shape error of the schematic plan against a known camera pose: every plan point is matched to the true ground
+    position of the vehicle it was tracked on (by projecting the truth into the image), then the RMS relative error of
+    pairwise distances is taken after the best single scale (the plan has no metres, so scale is free)."""
+    import itertools
+    import numpy as np
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from synthetic import camera_pose
+
+    p = plan_truth["pose"]
+    project, _ = camera_pose(p["w"], p["h"], p["focal"], p["cam_height"], p["pitch_deg"], p["yaw_deg"])
+    obs = {o["id"]: o for o in out["observations"]}
+    truth, plan = [], []
+    for v in out["reconstruction"]["vehicles"]:
+        src = obs.get(v["source_observation_ids"][0]) if v["source_observation_ids"] else None
+        if not src or len(src["attributes"].get("points", [])) != len(v["track"]):
+            continue
+        for (t, u, w), tp in zip(src["attributes"]["points"], v["track"]):
+            best = None
+            for veh in plan_truth["vehicles"]:
+                z = veh["z0"] + veh["speed_ms"] * t
+                pr = project(veh["lane_x"], 0.0, z)
+                if pr is not None and (best is None or np.hypot(pr[0] - u, pr[1] - w) < best[0]):
+                    best = (float(np.hypot(pr[0] - u, pr[1] - w)), veh["lane_x"], z)
+            if best and best[0] < 25:
+                truth.append(np.array([best[1], best[2]]))
+                plan.append(np.array([tp["x_m"], tp["y_m"]]))
+    if len(truth) < 3:
+        return None, len(truth)
+    dt = np.array([np.hypot(*(truth[i] - truth[j])) for i, j in itertools.combinations(range(len(truth)), 2)])
+    dp = np.array([np.hypot(*(plan[i] - plan[j])) for i, j in itertools.combinations(range(len(plan)), 2)])
+    keep = dt > 0.5
+    dt, dp = dt[keep], dp[keep]
+    s = float(dt @ dp) / float(dp @ dp)
+    return float(np.sqrt(np.mean(((s * dp - dt) / dt) ** 2))) * 100, len(truth)
+
+
 def score(truth: dict, out: dict, llm: bool) -> list[dict]:
     checks = []
     obs = {o["id"]: o for o in out["observations"]}
@@ -103,6 +140,20 @@ def score(truth: dict, out: dict, llm: bool) -> list[dict]:
                 and "NOT to scale" in (rec.get("note") or "")
                 and all(p["source"] == "estimated" for v in rec["vehicles"] for p in v["track"]),
                 f"{rec['scene']['units']}, {len(rec['vehicles'])} vehicle(s)")
+            if want.get("road_aligned"):
+                add("reconstruction", "plan is road-aligned (direction taken from the lane lines)",
+                    "direction comes from the lane lines" in (rec.get("note") or ""), "road direction taken from the picture" if "direction comes from the lane lines" in (rec.get("note") or "") else "nominal camera used")
+            if want.get("max_path_angle_deg"):  # every synthetic vehicle drives along its lane: its path must run along the plan's y axis
+                import math
+                angles = [math.degrees(math.atan2(abs(v["track"][-1]["x_m"] - v["track"][0]["x_m"]),
+                                                  abs(v["track"][-1]["y_m"] - v["track"][0]["y_m"]))) for v in rec["vehicles"]]
+                add("reconstruction", f"vehicle paths run along the road axis (within {want['max_path_angle_deg']:g} degrees)",
+                    bool(angles) and max(angles) <= want["max_path_angle_deg"], ", ".join(f"{a:.1f}" for a in angles) + " degrees off")
+            if want.get("plan_error_max_pct") and truth.get("plan_truth"):
+                err, n = plan_shape_error(truth["plan_truth"], out)
+                add("reconstruction", f"plan proportions within {want['plan_error_max_pct']:g}% of the true road plane",
+                    err is not None and n >= want.get("min_points", 3) and err <= want["plan_error_max_pct"],
+                    "no matchable points" if err is None else f"{err:.1f}% over {n} points")
         elif want.get("empty"):
             add("reconstruction", "no top-down map without positional evidence", not rec["vehicles"] and bool(rec.get("note")),
                 rec.get("note") or f"{len(rec['vehicles'])} vehicle(s)")

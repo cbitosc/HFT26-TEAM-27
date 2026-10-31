@@ -10,6 +10,7 @@ import math
 from collections import Counter
 from datetime import datetime, timezone
 
+from .plan import road_plan
 from app.schemas import CameraImage, Observation, ObservationSet, Reconstruction, Scene, Timeline, TrackPoint, VehicleTrack
 
 VIEW_COLORS = ["#0ea5e9", "#22c55e", "#f59e0b", "#a855f7", "#14b8a6", "#ec4899"]
@@ -180,8 +181,14 @@ def reconstruct_schematic_from_camera(observation_sets: list[ObservationSet], ti
     w, h = max(x2 - x1, 1), max(y2 - y1, 1)
     xc, y_h = (x1 + x2) / 2, y1 - SCHEMATIC_HORIZON_ABOVE_VIEW * h
     focal = SCHEMATIC_FOCAL_PER_WIDTH * w
+    # Preferred: the road's own direction, found from its lane lines and rails (ingestion/road_geometry.py), so the plan
+    # is road-aligned: lanes parallel, the road running up the page. Otherwise a nominal camera that looks along the road.
+    vp = next((o.attributes["vanishing_point_px"] for o in chosen if o.attributes.get("vanishing_point_px")), None)
+    aligned = road_plan((vp[0] - x1, vp[1] - y1), w, h) if vp else None
 
     def ground(x: float, y: float) -> tuple[float, float]:
+        if aligned is not None:
+            return aligned(x - x1, y - y1)
         depth = SCHEMATIC_NEAR_UNITS * h / max(y - y_h, 0.05 * h)
         return (x - xc) * depth / focal, depth
 
@@ -205,14 +212,20 @@ def reconstruct_schematic_from_camera(observation_sets: list[ObservationSet], ti
     times = [p.t_s for v in vehicles for p in v.track]
     half = max(5.0, (max(xs) - min(xs)) / 2, (max(ys) - min(ys)) / 2) * 1.15
     others = sorted(v for v in per_view if v != view)
+    camera = ("Image positions are mapped onto a flat road. The road's direction comes from the lane lines and rails in the "
+              "picture (the road runs up the plan); the camera's field of view (about 60 degrees) is assumed, "
+              if aligned is not None else
+              "Image positions are mapped onto a flat road with an assumed camera (horizon just above the view, about 60 degree "
+              "field of view), ")
     note = (f"Schematic plan from camera view {view} ({len(vehicles)} vehicle tracks): NOT calibrated, NOT to scale. "
-            "Image positions are mapped onto a flat road with an assumed camera (horizon just above the view, about 60 degree "
-            "field of view), so it shows the layout and order of movement, not distances, speeds or an impact point. "
+            f"{camera}so it shows the layout and order of movement, not distances, speeds or an impact point. "
             "Declare the lane-marking standard or add a manual calibration for a measured reconstruction."
             + (f" Views {', '.join(map(str, others))} also have tracks but a different frame." if others else ""))
     return Reconstruction(
         incident_id=timeline.incident_id, generated_at=datetime.now(timezone.utc),
         scene=Scene(type="metric", units="schematic", extent_m=round(half, 1),
                     center_m=(round((max(xs) + min(xs)) / 2, 2), round((max(ys) + min(ys)) / 2, 2)),
-                    frame_note=f"schematic plan, camera view {view}: x = across the road, y = away from the camera (not to scale)"),
+                    frame_note=(f"schematic plan, camera view {view}: x = across the road, y = along the road, away from the camera, "
+                                "road direction from its lane lines (not to scale)" if aligned is not None else
+                                f"schematic plan, camera view {view}: x = across the road, y = away from the camera (not to scale)")),
         t_min_s=round(min(times), 3), t_max_s=round(max(times), 3), vehicles=vehicles, collision=None, note=note)
