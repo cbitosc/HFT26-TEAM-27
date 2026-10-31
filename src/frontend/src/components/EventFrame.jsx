@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { BasisBadge, SourceBadge } from './Panel'
 
 const MAX_SHOTS = 3
@@ -58,6 +59,7 @@ function Tag({ x, y, size, text, color }) {
 }
 
 function Shot({ shot, ea }) {
+  const [failed, setFailed] = useState(false)
   const { o, img, W, H } = shot
   const view = shot.view ?? [0, 0, W, H]
   const vw = view[2] - view[0]
@@ -81,7 +83,7 @@ function Shot({ shot, ea }) {
         <Tag x={x1} y={Math.max(y1, view[1] + fs * 1.6)} size={fs} text={label} color={color} />
       </g>
     )
-    const pad = Math.max(x2 - x1, y2 - y1) * 1.2
+    const pad = Math.max(x2 - x1, y2 - y1) * 0.4
     zoom = [Math.max(view[0], x1 - pad), Math.max(view[1], y1 - pad), Math.min(view[2], x2 + pad), Math.min(view[3], y2 + pad)]
     note = 'The box is the AI vision model’s reading of where the vehicle is, not a measurement.'
   } else if (shot.kind === 'track') {
@@ -117,18 +119,25 @@ function Shot({ shot, ea }) {
   }
 
   const frame = frameHref(img, shot.frame)
+  if (failed) {
+    return (
+      <div className="rounded border border-dashed border-slate-300 p-3 text-xs text-slate-500">
+        The video frame for this event ({shot.frame}) could not be loaded. Is the video still uploaded? The evidence list below still applies.
+      </div>
+    )
+  }
   return (
     <figure className="min-w-0 overflow-hidden rounded border border-slate-200 bg-white">
-      <div className={zoom ? 'grid gap-px bg-slate-200 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]' : ''}>
+      <div className={zoom ? 'grid gap-px bg-slate-200 sm:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : ''}>
         <a href={frame.replace(/width=\d+/, 'width=1280')} target="_blank" rel="noreferrer" className="block bg-black">
           <svg viewBox={`${view[0]} ${view[1]} ${vw} ${vh}`} className="block w-full" role="img" aria-label={`annotated frame ${shot.frame}`}>
-            <image href={frame} x={0} y={0} width={W} height={H} />
+            <image href={frame} x={0} y={0} width={W} height={H} onError={() => setFailed(true)} />
             {overlay}
           </svg>
         </a>
         {zoom && (
-          <div className="bg-black">
-            <svg viewBox={`${zoom[0]} ${zoom[1]} ${zoom[2] - zoom[0]} ${zoom[3] - zoom[1]}`} className="block h-full max-h-72 w-full" preserveAspectRatio="xMidYMid meet" role="img" aria-label="zoom on the vehicle">
+          <div className="relative aspect-[4/3] bg-black sm:aspect-auto">
+            <svg viewBox={`${zoom[0]} ${zoom[1]} ${zoom[2] - zoom[0]} ${zoom[3] - zoom[1]}`} className="absolute inset-0 h-full w-full" preserveAspectRatio="xMidYMid slice" role="img" aria-label="zoom on the vehicle">
               <image href={frame} x={0} y={0} width={W} height={H} />
               <rect x={shot.box[0]} y={shot.box[1]} width={shot.box[2] - shot.box[0]} height={shot.box[3] - shot.box[1]} fill="none" stroke="#ef4444" strokeWidth={(zoom[2] - zoom[0]) / 120} />
             </svg>
@@ -150,7 +159,14 @@ function Shot({ shot, ea }) {
 // Annotated video frames for the selected timeline event: what the evidence behind it actually looked like.
 export default function EventFrame({ event, observationsById, eventAnalysis }) {
   const shots = shotsFor(event, observationsById, eventAnalysis)
-  if (shots.length === 0) return null
+  if (shots.length === 0) {
+    const kinds = [...new Set(event.source_types)].join(' and ')
+    return (
+      <p className="mb-3 rounded border border-dashed border-slate-300 p-2 text-xs text-slate-500">
+        No video frame for this event: it rests on {kinds} evidence only, so there is no image of a vehicle to annotate.
+      </p>
+    )
+  }
   return (
     <div className="mb-3 grid gap-3 lg:grid-cols-2 [&>*:only-child]:lg:col-span-2">
       {shots.map((s) => <Shot key={s.o.id} shot={s} ea={eventAnalysis} />)}

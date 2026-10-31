@@ -620,3 +620,12 @@ Requirement 5 (distinguish observations from inferences) was only partly visible
 - **Trace panel:** observed-vs-inferred bar for the whole map and for the selected vehicle; per-vehicle evidence strip over time (solid = observed, hatched = inferred, red line = now); an "Inferred collision" card with its supporting observations; supporting evidence grouped into *Observed* (measured / rule-computed) and *Inferred or reported* (AI reading / statement).
 
 Checked in an isolated backend (demo sensor + witness files, own storage; the user's run untouched): junction map at the impact frame, legend, split bar, strip, grouped evidence, dark mode. The CCTV clip reads as 100% inferred (schematic), which is correct. Build OK.
+
+## 2026-10-31 · Timeline annotated frames: report "missing", fixes
+
+Report: annotated images missing in the Timeline. Could not reproduce on the CCTV clip: all three events return frames (HTTP 200) and render at narrow and wide (1440 px) widths. Likely causes seen: Vite hot-reload errors while the Reconstruction files were mid-edit (a reload clears them), and clicking an already-open event toggles it closed, which left its row highlighted with no panel. Fixed what could genuinely make an image look missing:
+- Events with no video evidence (witness / sensor-only, fixtures) now say so ("No video frame for this event: it rests on … evidence only") instead of showing nothing.
+- A frame that fails to load shows a notice instead of a blank box.
+- Closing an event also clears its highlight.
+- Wide layout: the zoom crop was not actually zoomed (padding 1.2x the box) and left a black gap; it now crops to 0.4x padding around the vehicle and matches the main image height.
+Build OK; checked at 1440 px in the browser.

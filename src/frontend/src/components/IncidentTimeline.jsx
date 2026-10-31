@@ -27,8 +27,9 @@ export default function IncidentTimeline({ timeline, time, selectedObs, onFocus,
   const current = events.find((e) => e.id === selected)
 
   const pick = (e) => {
-    setSelected(selected === e.id ? null : e.id)
-    onFocus(e.t_start_s, e.observation_ids)
+    const closing = selected === e.id
+    setSelected(closing ? null : e.id)
+    onFocus(e.t_start_s, closing ? [] : e.observation_ids)
   }
 
   return (
